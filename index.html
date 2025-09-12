@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Analysis App</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Basic styling for the main page layout */
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter font */
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5; /* Light background */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            max-width: 800px; /* Increased max-width for calendar */
+            width: 100%;
+            padding: 30px;
+            border-radius: 12px; /* Rounded corners */
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); /* Soft shadow */
+            box-sizing: border-box;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+            font-size: 0.95em;
+        }
+        input[type="text"],
+        input[type="date"],
+        input[type="time"] {
+            width: calc(100% - 24px); /* Adjust for padding and border */
+            padding: 12px;
+            margin-bottom: 18px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px; /* Rounded corners for inputs */
+            font-size: 1em;
+            box-sizing: border-box;
+            transition: border-color 0.3s ease;
+        }
+        input[type="text"]:focus,
+        input[type="date"]:focus,
+        input[type="time"]:focus {
+            border-color: #007bff; /* Highlight on focus */
+            outline: none;
+        }
+        button {
+            padding: 12px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px; /* Rounded corners for button */
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: 600;
+            transition: background-color 0.3s ease, transform 0.1s ease;
+            box-sizing: border-box; /* Ensure padding is included in width */
+        }
+        button:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px); /* Slight lift on hover */
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .analyze-button-container {
+            width: 100%;
+            text-align: center;
+            margin-bottom: 30px;
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .analyze-button-container button {
+            width: auto; /* Allow button to size content */
+            min-width: 150px;
+        }
+
+        h2 {
+            color: #333;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        pre {
+            background-color: #f8f8f8;
+            border: 1px solid #e0e0e0;
+            padding: 15px;
+            border-radius: 8px; /* Rounded corners for results */
+            white-space: pre-wrap; /* Allows text to wrap */
+            word-break: break-all; /* Breaks long words */
+            margin-top: 20px;
+            font-size: 0.9em;
+            color: #333;
+            min-height: 100px; /* Ensure it has some height */
+            overflow-x: auto; /* Allow horizontal scrolling if content is too wide */
+        }
+
+        /* Styles for the custom date-range-picker component */
+        date-range-picker {
+            display: block; /* Ensures it takes up full width */
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px dashed #a0a0a0; /* Dashed border to highlight component */
+            border-radius: 10px; /* Rounded corners for component container */
+            background-color: #fdfdfd;
+        }
+        date-range-picker div {
+            margin-bottom: 15px; /* Spacing between start/end date groups */
+        }
+        date-range-picker label {
+            margin-bottom: 5px;
+            display: inline-block;
+            width: 90px; /* Fixed width for labels for alignment */
+            vertical-align: middle;
+        }
+        date-range-picker input {
+            width: calc(50% - 110px); /* Adjust to fit label and spacing */
+            display: inline-block;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        /* Calendar Styles */
+        .calendar-container {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f8f8;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .calendar-header h3 {
+            margin: 0;
+            color: #333;
+            font-size: 1.4em;
+        }
+        .calendar-header button {
+            padding: 8px 15px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background-color 0.3s ease;
+            width: auto; /* Override general button width */
+            min-width: unset; /* Override general button min-width */
+        }
+        .calendar-header button:hover {
+            background-color: #5a6268;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+            text-align: center;
+        }
+        .calendar-day-header {
+            font-weight: 600;
+            color: #666;
+            padding: 8px 0;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+        .calendar-day {
+            padding: 5px 2px; /* Made more compact */
+            border-radius: 5px;
+            background-color: #fff;
+            color: #333;
+            font-size: 0.8em; /* Made text smaller */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 40px; /* Made height more compact */
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            cursor: pointer; /* Indicate clickable */
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+        }
+        .calendar-day:hover:not(.other-month) {
+            background-color: #e0e0e0; /* Subtle hover effect */
+        }
+        .calendar-day.other-month {
+            color: #bbb;
+            background-color: #f5f5f5;
+            cursor: default; /* Not clickable */
+        }
+        .calendar-day.weekend {
+            background-color: #fcfcfc;
+            color: #999;
+        }
+        .calendar-day.bank-holiday {
+            background-color: #fef8e7; /* Softer yellow for bank holidays */
+            color: #d4a700; /* Darker yellow text */
+            font-weight: 500; /* Slightly less prominent font weight */
+            border: 1px solid #ffecb3; /* Softer border */
+        }
+        .calendar-day.eligible-working-day {
+            background-color: #e6ffe6; /* Light green for eligible working days */
+            border: 1px solid #28a745;
+        }
+        .calendar-day.visited-day {
+            background-color: #cceeff; /* Light blue for visited days */
+            font-weight: 700;
+            border: 2px solid #007bff;
+            box-shadow: 0 2px 5px rgba(0, 123, 255, 0.2);
+        }
+        .calendar-day.visited-day.eligible-working-day {
+            background-color: #aaffaa; /* Green-blue for visited eligible working days */
+            border-color: #007bff;
+        }
+        .calendar-day.excluded-day { /* Style for manually excluded days */
+            background-color: #f0f0f0; /* Light grey */
+            color: #888;
+            border: 1px dashed #ccc;
+            opacity: 0.7;
+        }
+        .calendar-day.excluded-day.visited-day { /* If a visited day is excluded */
+            background-color: #e0e0e0;
+            border-color: #aaa;
+            color: #555;
+        }
+        .calendar-day.manual-visited-day { /* NEW: Style for manually visited days */
+            background-color: #e0f7fa; /* Very light cyan */
+            border: 1px solid #00bcd4; /* Cyan border */
+            font-weight: 600;
+        }
+        /* When a manually visited day is also an eligible working day */
+        .calendar-day.manual-visited-day.eligible-working-day {
+            background-color: #b2ebf2; /* A blend of light green and light cyan */
+            border-color: #00bcd4;
+        }
+        /* When a manually visited day is also an excluded day (should be mutually exclusive by logic, but for safety) */
+        .calendar-day.manual-visited-day.excluded-day {
+            background-color: #e0e0e0; /* Grey */
+            border-color: #aaa;
+            color: #555;
+        }
+
+
+        .day-number {
+            font-size: 1.1em; /* Slightly smaller */
+            font-weight: 700;
+            margin-bottom: 3px; /* More compact */
+        }
+        .day-indicator {
+            font-size: 0.65em; /* Slightly smaller */
+            color: #777;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            .calendar-day {
+                padding: 5px 2px;
+                min-height: 40px;
+            }
+            .day-number {
+                font-size: 1em;
+            }
+            .day-indicator {
+                font-size: 0.6em;
+            }
+        }
+        @media (max-width: 480px) {
+            .container {
+                padding: 15px;
+            }
+            input[type="text"],
+            input[type="date"],
+            input[type="time"] {
+                width: calc(100% - 20px); /* Adjust for smaller screens */
+            }
+            date-range-picker input {
+                width: calc(100% - 100px); /* Adjust for smaller screens */
+                margin-bottom: 10px;
+            }
+            date-range-picker label {
+                width: auto; /* Allow label to shrink */
+                display: block; /* Stack label and input on small screens */
+            }
+            .calendar-day {
+                font-size: 0.8em;
+                min-height: 35px;
+            }
+            .day-number {
+                font-size: 0.9em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LVA</h1>
+
+        <label for="placeIdInput">Place ID:</label>
+        <input type="text" id="placeIdInput" value="ChIJmW6qHk0bdkgR0SPHeuB6bzs" placeholder="e.g., ChIJmW6qHk0bdkgR0SPHeuB6bzs">
+
+        <date-range-picker id="datePicker"></date-range-picker>
+
+        <div class="analyze-button-container">
+            <button id="analyzeButton">Analyze Visits</button>
+            <button id="last90DaysButton">Last 90 Days</button>
+        </div>
+
+        <h2>Analysis Results:</h2>
+        <pre id="results">Click "Analyze Visits" to see data.</pre>
+
+        <h2>Calendar View:</h2>
+        <div id="calendarContainer" class="calendar-container">
+            <p style="text-align: center; color: #777;">Select a date range and click "Analyze Visits" to generate the calendar.</p>
+        </div>
+    </div>
+
+    <script type="module" src="frontend.js"></script>
+</body>
+</html>
