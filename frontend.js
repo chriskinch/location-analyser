@@ -499,8 +499,22 @@ class CalendarRenderer {
 
 
 // --- Main Frontend Logic to interact with the Node.js backend ---
-// This section handles the interaction between the HTML elements and your server.
 document.addEventListener('DOMContentLoaded', () => {
+    // Check Google auth status and update the auth bar
+    (async () => {
+        try {
+            const res = await fetch('/auth/status');
+            const data = await res.json();
+            if (data.authenticated) {
+                document.getElementById('authLoggedOut').style.display = 'none';
+                document.getElementById('authLoggedIn').style.display = 'inline';
+                document.getElementById('authUserName').textContent = data.user.name || data.user.email;
+            }
+        } catch {
+            // Server may not be running; auth bar stays in logged-out state
+        }
+    })();
+
     // Get references to the HTML elements.
     const placeIdInput = document.getElementById('placeIdInput');
     const datePicker = document.getElementById('datePicker'); // Reference to your custom component
