@@ -158,7 +158,7 @@ const server = http.createServer(async (req, res) => {
         // aliases (localhost vs 127.0.0.1) and proxied deployments work correctly.
         const origin = req.headers.origin;
         if (origin) {
-            const proto = req.headers['x-forwarded-proto'] || 'http';
+            const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
             const host = req.headers.host || `${hostname}:${port}`;
             if (origin !== `${proto}://${host}`) {
                 res.writeHead(403, { 'Content-Type': 'text/plain' });
