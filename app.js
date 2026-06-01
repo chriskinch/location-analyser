@@ -65,15 +65,6 @@ function getSessionData(req) {
 const server = http.createServer(async (req, res) => {
     const reqUrl = url.parse(req.url, true);
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
-        return;
-    }
 
     // --- Auth: initiate OAuth flow ---
     if (reqUrl.pathname === '/auth/google' && req.method === 'GET') {
@@ -133,9 +124,10 @@ const server = http.createServer(async (req, res) => {
 
             // Clear the one-time state cookie and set the session cookie.
             // Secure flag intentionally omitted: this server runs on HTTP locally.
+            // Max-Age matches the server-side SESSION_TTL_MS (24h).
             res.setHeader('Set-Cookie', [
                 'oauth_state=; HttpOnly; Path=/auth/callback; Max-Age=0; SameSite=Lax',
-                `session_id=${sessionId}; HttpOnly; Path=/; SameSite=Lax`,
+                `session_id=${sessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}`,
             ]);
             res.writeHead(302, { Location: '/' });
             res.end();
@@ -160,6 +152,7 @@ const server = http.createServer(async (req, res) => {
     // --- Auth: status ---
     if (reqUrl.pathname === '/auth/status' && req.method === 'GET') {
         res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-store');
         const sessionData = getSessionData(req);
         if (sessionData && sessionData.user) {
             res.writeHead(200);
@@ -196,6 +189,14 @@ const server = http.createServer(async (req, res) => {
 
     // --- Static file serving ---
     const reqPath = reqUrl.pathname === '/' ? 'index.html' : reqUrl.pathname.replace(/^\/+/, '');
+
+    // Block dotfiles and dotdirectories (e.g. /.env, /.git/config)
+    if (reqPath.split('/').some(seg => seg.startsWith('.'))) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden');
+        return;
+    }
+
     const staticPath = path.resolve(__dirname, reqPath);
 
     // Guard against directory traversal (e.g. /../.env)

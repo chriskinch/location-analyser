@@ -516,7 +516,11 @@ document.addEventListener('DOMContentLoaded', () => {
     })();
 
     document.getElementById('signOutBtn').addEventListener('click', async () => {
-        await fetch('/auth/logout', { method: 'POST' });
+        try {
+            await fetch('/auth/logout', { method: 'POST' });
+        } catch {
+            // Server unavailable; reload anyway to reset UI state
+        }
         location.reload();
     });
 
