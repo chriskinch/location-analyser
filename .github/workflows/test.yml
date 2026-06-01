@@ -3,6 +3,9 @@ name: Tests
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -20,4 +23,4 @@ jobs:
         run: npm ci
 
       - name: Run Vitest
-        run: npx vitest run
+        run: npm test
