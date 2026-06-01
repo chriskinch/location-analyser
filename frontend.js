@@ -512,14 +512,17 @@ async function initAuthBar() {
         // Server may not be running; auth bar stays in logged-out state
     }
 
-    document.getElementById('signOutBtn').addEventListener('click', async () => {
-        try {
-            await fetch('/auth/logout', { method: 'POST' });
-        } catch {
-            // Server unavailable; reload anyway to reset UI state
-        }
-        location.reload();
-    });
+    const signOutBtn = document.getElementById('signOutBtn');
+    if (signOutBtn) {
+        signOutBtn.addEventListener('click', async () => {
+            try {
+                await fetch('/auth/logout', { method: 'POST' });
+            } catch {
+                // Server unavailable; reload anyway to reset UI state
+            }
+            location.reload();
+        });
+    }
 }
 
 // --- Main Frontend Logic to interact with the Node.js backend ---

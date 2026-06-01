@@ -199,8 +199,8 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // Block sensitive data files from being served as static assets
-    if (/^timeline.*\.json$/i.test(reqPath)) {
+    // Block sensitive data files from being served as static assets (any depth)
+    if (/(?:^|\/)timeline[^/]*\.json$/i.test(reqPath)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
         res.end('Forbidden');
         return;
