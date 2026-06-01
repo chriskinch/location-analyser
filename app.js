@@ -17,6 +17,12 @@ const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true' ? '; Secure' : '';
 // --- Google OAuth setup ---
 const REDIRECT_URI = process.env.REDIRECT_URI || `http://${hostname}:${port}/auth/callback`;
 const SCOPES = ['openid', 'email', 'profile'];
+const SERVER_ORIGIN = (() => {
+    try { return new URL(REDIRECT_URI).origin; } catch { return `http://${hostname}:${port}`; }
+})();
+
+// Files the static handler is allowed to serve
+const STATIC_ALLOWLIST = new Set(['index.html', 'frontend.js', 'archive_browser.html']);
 
 let OAuth2Client;
 try {
@@ -119,6 +125,9 @@ const server = http.createServer(async (req, res) => {
                 audience: process.env.GOOGLE_CLIENT_ID,
             });
             const payload = ticket.getPayload();
+            if (!payload || !payload.email) {
+                throw new Error('Invalid ID token: missing user info');
+            }
 
             const sessionId = crypto.randomBytes(32).toString('hex');
             sessions.set(sessionId, {
@@ -148,7 +157,7 @@ const server = http.createServer(async (req, res) => {
     if (reqUrl.pathname === '/auth/logout' && req.method === 'POST') {
         // Validate Origin when present to guard against cross-site logout (CSRF)
         const origin = req.headers.origin;
-        if (origin && origin !== new URL(REDIRECT_URI).origin) {
+        if (origin && origin !== SERVER_ORIGIN) {
             res.writeHead(403, { 'Content-Type': 'text/plain' });
             res.end('Forbidden');
             return;
@@ -213,6 +222,13 @@ const server = http.createServer(async (req, res) => {
     if (/(?:^|\/)timeline[^/]*\.json$/i.test(reqPath)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
         res.end('Forbidden');
+        return;
+    }
+
+    // Only serve explicitly allowed public files; everything else (app.js, package.json, …) is hidden
+    if (!STATIC_ALLOWLIST.has(reqPath)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('404 Not Found');
         return;
     }
 
