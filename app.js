@@ -17,9 +17,6 @@ const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true' ? '; Secure' : '';
 // --- Google OAuth setup ---
 const REDIRECT_URI = process.env.REDIRECT_URI || `http://${hostname}:${port}/auth/callback`;
 const SCOPES = ['openid', 'email', 'profile'];
-const SERVER_ORIGIN = (() => {
-    try { return new URL(REDIRECT_URI).origin; } catch { return `http://${hostname}:${port}`; }
-})();
 
 // Files the static handler is allowed to serve
 const STATIC_ALLOWLIST = new Set(['index.html', 'frontend.js', 'archive_browser.html']);
