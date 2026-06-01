@@ -1,0 +1,26 @@
+# Sensitive personal data — never read by Claude
+timeline.json
+timeline.*.json
+
+# Dependencies and lock files
+node_modules/
+package-lock.json
+
+# Test coverage and output
+coverage/
+.nyc_output/
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+logs/
+
+# OS and editor noise
+.DS_Store
+._*
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
