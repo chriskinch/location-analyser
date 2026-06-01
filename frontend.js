@@ -604,3 +604,8 @@ Average: ${data.averageVisitsPerWorkingWeek}
     // Initial analysis run when the page loads
     runAnalysis();
 });
+
+// Export utilities for unit testing (guard prevents this from running in the browser)
+if (typeof module !== 'undefined') {
+    module.exports = { debounce, CalendarRenderer, DateRangePicker };
+}
