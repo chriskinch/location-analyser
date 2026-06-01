@@ -64,7 +64,6 @@ function getSessionData(req) {
 // --- HTTP server ---
 const server = http.createServer(async (req, res) => {
     const reqUrl = url.parse(req.url, true);
-    const filePath = path.join(__dirname, reqUrl.pathname);
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -80,10 +79,14 @@ const server = http.createServer(async (req, res) => {
     if (reqUrl.pathname === '/auth/google' && req.method === 'GET') {
         try {
             const client = createOAuth2Client();
+            const state = crypto.randomBytes(16).toString('hex');
+            // Short-lived state cookie scoped to the callback path only
+            res.setHeader('Set-Cookie', `oauth_state=${state}; HttpOnly; Path=/auth/callback; SameSite=Lax; Max-Age=300`);
             const authUrl = client.generateAuthUrl({
                 access_type: 'online',
                 scope: SCOPES,
                 prompt: 'select_account',
+                state,
             });
             res.writeHead(302, { Location: authUrl });
             res.end();
@@ -96,12 +99,20 @@ const server = http.createServer(async (req, res) => {
 
     // --- Auth: OAuth callback ---
     if (reqUrl.pathname === '/auth/callback' && req.method === 'GET') {
-        const code = reqUrl.query.code;
+        const { code, state } = reqUrl.query;
+        const { oauth_state } = parseCookies(req);
+
         if (!code) {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
             res.end('Missing authorization code');
             return;
         }
+        if (!oauth_state || !state || oauth_state !== state) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end('Invalid state parameter');
+            return;
+        }
+
         try {
             const client = createOAuth2Client();
             const { tokens } = await client.getToken(code);
@@ -120,8 +131,12 @@ const server = http.createServer(async (req, res) => {
                 expiresAt: Date.now() + SESSION_TTL_MS,
             });
 
+            // Clear the one-time state cookie and set the session cookie.
             // Secure flag intentionally omitted: this server runs on HTTP locally.
-            res.setHeader('Set-Cookie', `session_id=${sessionId}; HttpOnly; Path=/; SameSite=Lax`);
+            res.setHeader('Set-Cookie', [
+                'oauth_state=; HttpOnly; Path=/auth/callback; Max-Age=0; SameSite=Lax',
+                `session_id=${sessionId}; HttpOnly; Path=/; SameSite=Lax`,
+            ]);
             res.writeHead(302, { Location: '/' });
             res.end();
         } catch (err) {
@@ -180,11 +195,20 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --- Static file serving ---
+    const reqPath = reqUrl.pathname === '/' ? 'index.html' : reqUrl.pathname.replace(/^\/+/, '');
+    const staticPath = path.resolve(__dirname, reqPath);
+
+    // Guard against directory traversal (e.g. /../.env)
+    if (!staticPath.startsWith(__dirname + path.sep)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden');
+        return;
+    }
+
     let contentType = 'text/html';
     if (reqUrl.pathname.endsWith('.js')) contentType = 'application/javascript';
     else if (reqUrl.pathname.endsWith('.css')) contentType = 'text/css';
 
-    const staticPath = filePath === path.join(__dirname, '/') ? path.join(__dirname, 'index.html') : filePath;
     try {
         const data = await fs.promises.readFile(staticPath);
         res.writeHead(200, { 'Content-Type': contentType });

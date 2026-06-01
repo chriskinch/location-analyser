@@ -18,7 +18,7 @@ A web application for analyzing workplace visits from Google Timeline/Takeout da
 
 ### Prerequisites
 
-- Node.js (any recent version)
+- Node.js 18 or higher
 - A Google account
 
 ### Setup
