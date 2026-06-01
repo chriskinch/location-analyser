@@ -515,6 +515,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     })();
 
+    document.getElementById('signOutBtn').addEventListener('click', async () => {
+        await fetch('/auth/logout', { method: 'POST' });
+        location.reload();
+    });
+
     // Get references to the HTML elements.
     const placeIdInput = document.getElementById('placeIdInput');
     const datePicker = document.getElementById('datePicker'); // Reference to your custom component
