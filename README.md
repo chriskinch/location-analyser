@@ -121,7 +121,8 @@ Analyzes timeline data for a specific location and date range.
 ## Privacy
 
 - Timeline data files (`timeline*.json`) are automatically excluded from git
-- No data is sent to external servers — all processing happens locally
+- Timeline data analysis runs entirely locally — your location history is never sent to external servers
+- Google authentication requires a redirect to Google's login page; only OAuth tokens are exchanged with Google, not your timeline data
 - Manual date adjustments are stored only in your browser's localStorage
 - Google OAuth credentials (`.env`) are excluded from git — each user supplies their own from their own Google Cloud project
 - OAuth access tokens are held in server memory only and are cleared when the server restarts

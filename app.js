@@ -154,13 +154,20 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --- Auth: logout ---
+    // POST is intentional: GET logout is vulnerable to CSRF via <img>/<link> requests.
     if (reqUrl.pathname === '/auth/logout' && req.method === 'POST') {
-        // Validate Origin when present to guard against cross-site logout (CSRF)
+        // Validate Origin when present to guard against cross-site logout.
+        // Derive the expected origin from the incoming request so that host
+        // aliases (localhost vs 127.0.0.1) and proxied deployments work correctly.
         const origin = req.headers.origin;
-        if (origin && origin !== SERVER_ORIGIN) {
-            res.writeHead(403, { 'Content-Type': 'text/plain' });
-            res.end('Forbidden');
-            return;
+        if (origin) {
+            const proto = req.headers['x-forwarded-proto'] || 'http';
+            const host = req.headers.host || `${hostname}:${port}`;
+            if (origin !== `${proto}://${host}`) {
+                res.writeHead(403, { 'Content-Type': 'text/plain' });
+                res.end('Forbidden');
+                return;
+            }
         }
         const { session_id } = parseCookies(req);
         if (session_id) sessions.delete(session_id);
