@@ -8,6 +8,9 @@ const { analyzeTimelineData } = require('./analyzer');
 
 const hostname = process.env.HOST || '127.0.0.1';
 const port = parseInt(process.env.PORT || '3000', 10);
+if (isNaN(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid PORT value: "${process.env.PORT}". Must be a number between 1 and 65535.`);
+}
 
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true' ? '; Secure' : '';
 
@@ -141,8 +144,15 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // --- Auth: logout (POST to prevent CSRF via GET) ---
+    // --- Auth: logout ---
     if (reqUrl.pathname === '/auth/logout' && req.method === 'POST') {
+        // Validate Origin when present to guard against cross-site logout (CSRF)
+        const origin = req.headers.origin;
+        if (origin && origin !== new URL(REDIRECT_URI).origin) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('Forbidden');
+            return;
+        }
         const { session_id } = parseCookies(req);
         if (session_id) sessions.delete(session_id);
         res.setHeader('Set-Cookie', `session_id=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${COOKIE_SECURE}`);

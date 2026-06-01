@@ -564,7 +564,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Construct the URL for your Node.js backend API.
         // encodeURIComponent is crucial for properly handling special characters in URL parameters.
-        const apiUrl = `http://127.0.0.1:3000/analyze?placeId=${encodeURIComponent(placeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&excludedDates=${encodeURIComponent(JSON.stringify(excludedDates))}&manualVisitedDates=${encodeURIComponent(JSON.stringify(manualVisitedDates))}`; // Add manualVisitedDates
+        const apiUrl = `/analyze?placeId=${encodeURIComponent(placeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&excludedDates=${encodeURIComponent(JSON.stringify(excludedDates))}&manualVisitedDates=${encodeURIComponent(JSON.stringify(manualVisitedDates))}`;
 
         try {
             // Make a fetch request to your Node.js server.
