@@ -49,8 +49,19 @@
         .auth-bar a:hover {
             text-decoration: underline;
         }
-        .auth-bar .sign-out {
+        .sign-out-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            font: inherit;
             color: #6c757d;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .sign-out-btn:hover {
+            color: #333;
+            background: none;
+            transform: none;
         }
         h1 {
             color: #333;
@@ -347,7 +358,7 @@
             <span id="authLoggedOut"><a href="/auth/google">Sign in with Google</a> to sync timeline data</span>
             <span id="authLoggedIn" style="display:none">
                 Signed in as <strong id="authUserName"></strong>
-                &mdash; <a href="/auth/logout" class="sign-out">Sign out</a>
+                &mdash; <button onclick="fetch('/auth/logout',{method:'POST'}).then(()=>location.reload())" class="sign-out-btn">Sign out</button>
             </span>
         </div>
 

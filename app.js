@@ -17,7 +17,7 @@ let OAuth2Client;
 try {
     ({ OAuth2Client } = require('google-auth-library'));
 } catch {
-    // google-auth-library not installed; run `npm install`
+    console.warn('WARNING: google-auth-library not found. Run `npm install` to enable Google login.');
 }
 
 function createOAuth2Client() {
@@ -29,7 +29,16 @@ function createOAuth2Client() {
 }
 
 // --- In-memory session store ---
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const sessions = new Map();
+
+// Purge expired sessions every hour
+setInterval(() => {
+    const now = Date.now();
+    for (const [id, data] of sessions) {
+        if (data.expiresAt < now) sessions.delete(id);
+    }
+}, 60 * 60 * 1000).unref();
 
 function parseCookies(req) {
     const cookies = {};
@@ -42,7 +51,14 @@ function parseCookies(req) {
 
 function getSessionData(req) {
     const { session_id } = parseCookies(req);
-    return session_id ? sessions.get(session_id) : null;
+    if (!session_id) return null;
+    const data = sessions.get(session_id);
+    if (!data) return null;
+    if (data.expiresAt < Date.now()) {
+        sessions.delete(session_id);
+        return null;
+    }
+    return data;
 }
 
 // --- HTTP server ---
@@ -101,8 +117,10 @@ const server = http.createServer(async (req, res) => {
             sessions.set(sessionId, {
                 user: { email: payload.email, name: payload.name },
                 tokens,
+                expiresAt: Date.now() + SESSION_TTL_MS,
             });
 
+            // Secure flag intentionally omitted: this server runs on HTTP locally.
             res.setHeader('Set-Cookie', `session_id=${sessionId}; HttpOnly; Path=/; SameSite=Lax`);
             res.writeHead(302, { Location: '/' });
             res.end();
@@ -114,13 +132,13 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // --- Auth: logout ---
-    if (reqUrl.pathname === '/auth/logout' && req.method === 'GET') {
+    // --- Auth: logout (POST to prevent CSRF via GET) ---
+    if (reqUrl.pathname === '/auth/logout' && req.method === 'POST') {
         const { session_id } = parseCookies(req);
         if (session_id) sessions.delete(session_id);
         res.setHeader('Set-Cookie', 'session_id=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
-        res.writeHead(302, { Location: '/' });
-        res.end();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
         return;
     }
 
@@ -167,20 +185,19 @@ const server = http.createServer(async (req, res) => {
     else if (reqUrl.pathname.endsWith('.css')) contentType = 'text/css';
 
     const staticPath = filePath === path.join(__dirname, '/') ? path.join(__dirname, 'index.html') : filePath;
-    fs.readFile(staticPath, (err, data) => {
-        if (err) {
-            if (err.code === 'ENOENT') {
-                res.writeHead(404, { 'Content-Type': 'text/plain' });
-                res.end('404 Not Found');
-            } else {
-                res.writeHead(500, { 'Content-Type': 'text/plain' });
-                res.end(`Server Error: ${err.code}`);
-            }
+    try {
+        const data = await fs.promises.readFile(staticPath);
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(data);
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('404 Not Found');
         } else {
-            res.writeHead(200, { 'Content-Type': contentType });
-            res.end(data);
+            res.writeHead(500, { 'Content-Type': 'text/plain' });
+            res.end(`Server Error: ${err.code}`);
         }
-    });
+    }
 });
 
 server.listen(port, hostname, () => {
