@@ -1,7 +1,10 @@
 name: No Claude Attribution
 
 on:
-  pull_request:
+  # pull_request_target sources this workflow from the base branch, so a PR
+  # cannot disable the check by editing the workflow in its own head branch.
+  # Safe here: no PR code is checked out and permissions are read-only.
+  pull_request_target:
     types: [opened, edited, reopened, synchronize]
   issue_comment:
     types: [created, edited]
