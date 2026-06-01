@@ -498,22 +498,19 @@ class CalendarRenderer {
 }
 
 
-// --- Main Frontend Logic to interact with the Node.js backend ---
-document.addEventListener('DOMContentLoaded', () => {
-    // Check Google auth status and update the auth bar
-    (async () => {
-        try {
-            const res = await fetch('/auth/status');
-            const data = await res.json();
-            if (data.authenticated) {
-                document.getElementById('authLoggedOut').style.display = 'none';
-                document.getElementById('authLoggedIn').style.display = 'inline';
-                document.getElementById('authUserName').textContent = data.user.name || data.user.email;
-            }
-        } catch {
-            // Server may not be running; auth bar stays in logged-out state
+// --- Auth bar initialisation ---
+async function initAuthBar() {
+    try {
+        const res = await fetch('/auth/status');
+        const data = await res.json();
+        if (data.authenticated) {
+            document.getElementById('authLoggedOut').style.display = 'none';
+            document.getElementById('authLoggedIn').style.display = 'inline';
+            document.getElementById('authUserName').textContent = data.user.name || data.user.email;
         }
-    })();
+    } catch {
+        // Server may not be running; auth bar stays in logged-out state
+    }
 
     document.getElementById('signOutBtn').addEventListener('click', async () => {
         try {
@@ -523,6 +520,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         location.reload();
     });
+}
+
+// --- Main Frontend Logic to interact with the Node.js backend ---
+document.addEventListener('DOMContentLoaded', () => {
+    initAuthBar();
 
     // Get references to the HTML elements.
     const placeIdInput = document.getElementById('placeIdInput');
@@ -630,5 +632,5 @@ Average: ${data.averageVisitsPerWorkingWeek}
 
 // Export utilities for unit testing (guard prevents this from running in the browser)
 if (typeof module !== 'undefined') {
-    module.exports = { debounce, CalendarRenderer, DateRangePicker };
+    module.exports = { debounce, CalendarRenderer, DateRangePicker, initAuthBar };
 }

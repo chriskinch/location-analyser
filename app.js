@@ -82,8 +82,8 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(302, { Location: authUrl });
             res.end();
         } catch (err) {
-            res.writeHead(500, { 'Content-Type': 'text/html' });
-            res.end(`<h2>Configuration error</h2><p>${err.message}</p><p><a href="/">Back</a></p>`);
+            res.writeHead(500, { 'Content-Type': 'text/plain' });
+            res.end(`Configuration error: ${err.message}`);
         }
         return;
     }
@@ -199,8 +199,9 @@ const server = http.createServer(async (req, res) => {
 
     const staticPath = path.resolve(__dirname, reqPath);
 
-    // Guard against directory traversal (e.g. /../.env)
-    if (!staticPath.startsWith(__dirname + path.sep)) {
+    // Guard against directory traversal — path.relative is cross-platform safe
+    const relative = path.relative(__dirname, staticPath);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
         res.end('Forbidden');
         return;
