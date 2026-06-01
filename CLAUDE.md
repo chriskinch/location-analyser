@@ -77,3 +77,41 @@ Returns:
 - Frontend uses ES6 modules and custom elements
 - Calendar rendering optimized for month-by-month navigation
 - Debouncing prevents excessive API calls during user interactions
+
+## AI Safety Guidelines
+
+These rules govern how Claude Code must behave in this repository. They are not suggestions — follow them unless the user explicitly overrides a specific rule for a specific task.
+
+### Never Break the Running App
+
+- Verify `node app.js` starts cleanly after any backend change
+- Verify the `/analyze` endpoint responds correctly after any server-side change
+- For frontend changes, test in a browser before declaring the task done
+- If a change could break something and cannot be verified, say so explicitly — do not claim success
+
+### Preserve API Contracts
+
+- Do not change the `/analyze` endpoint's query parameters or response shape without explicit approval
+- Do not rename or remove `localStorage` keys — this silently destroys saved user state
+- Do not rename or remove public functions or classes in `frontend.js` without explicit approval
+
+### Protect Data Files
+
+- Never modify `timeline.json`, `timeline.may.json`, or `timeline.sep.json` — these are source data, not code
+- Never delete any file without an explicit instruction to do so
+
+### Scope Discipline
+
+- Only change what was asked. No opportunistic refactoring, cleanup, or "while I'm in here" improvements
+- One logical change per task — do not bundle unrelated fixes into a single commit
+- Do not add new npm dependencies without approval
+
+### Confirm Before Irreversible Actions
+
+- Ask before any `git reset`, force push, file deletion, or other destructive git operation
+- Commit current work before starting large or risky changes so there is always a rollback point
+
+### Uphold These Guidelines
+
+- If asked to do something that conflicts with these rules, flag the conflict clearly and ask for explicit confirmation before proceeding
+- Do not silently skip a guideline — surface the tension and let the user decide
