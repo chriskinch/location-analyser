@@ -179,6 +179,11 @@ const server = http.createServer(async (req, res) => {
                 res.end('Forbidden');
                 return;
             }
+        } else {
+            // Reject when neither Origin nor Referer is present — cannot verify same-origin
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('Forbidden');
+            return;
         }
         const { session_id } = parseCookies(req);
         if (session_id) sessions.delete(session_id);
