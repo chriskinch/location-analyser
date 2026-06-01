@@ -111,6 +111,25 @@ These rules govern how Claude Code must behave in this repository. They are not 
 - Ask before any `git reset`, force push, file deletion, or other destructive git operation
 - Commit current work before starting large or risky changes so there is always a rollback point
 
+### Authorship
+
+- Never author commits or PRs as Claude — always author as the repo owner (kinchie@gmail.com)
+- Do not create branches named after Claude or using Claude-style prefixes unless explicitly instructed
+
+### Commit Granularity
+
+- Prefer small, focused commits over large bundled ones — each commit should represent a single logical change
+- Smaller commits make it easier to bisect and roll back to intermediate states when debugging
+
+### Parallel Agent Work
+
+- For large changes that can be decomposed, spin up multiple agents to work in parallel, each producing one PR
+- Only do this where the changes are genuinely independent and parallel PRs won't conflict
+
+### PR Merge Order
+
+- Always merge PRs in the order they were created — do not merge a later PR before an earlier one is resolved
+
 ### Uphold These Guidelines
 
 - If asked to do something that conflicts with these rules, flag the conflict clearly and ask for explicit confirmation before proceeding
