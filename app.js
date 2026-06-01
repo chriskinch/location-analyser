@@ -9,6 +9,8 @@ const { analyzeTimelineData } = require('./analyzer');
 const hostname = '127.0.0.1';
 const port = 3000;
 
+const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true' ? '; Secure' : '';
+
 // --- Google OAuth setup ---
 const REDIRECT_URI = `http://${hostname}:${port}/auth/callback`;
 const SCOPES = ['openid', 'email', 'profile'];
@@ -72,7 +74,7 @@ const server = http.createServer(async (req, res) => {
             const client = createOAuth2Client();
             const state = crypto.randomBytes(16).toString('hex');
             // Short-lived state cookie scoped to the callback path only
-            res.setHeader('Set-Cookie', `oauth_state=${state}; HttpOnly; Path=/auth/callback; SameSite=Lax; Max-Age=300`);
+            res.setHeader('Set-Cookie', `oauth_state=${state}; HttpOnly; Path=/auth/callback; SameSite=Lax; Max-Age=300${COOKIE_SECURE}`);
             const authUrl = client.generateAuthUrl({
                 access_type: 'online',
                 scope: SCOPES,
@@ -123,11 +125,11 @@ const server = http.createServer(async (req, res) => {
             });
 
             // Clear the one-time state cookie and set the session cookie.
-            // Secure flag intentionally omitted: this server runs on HTTP locally.
+            // Secure flag is opt-in via COOKIE_SECURE=true env var (for HTTPS deployments).
             // Max-Age matches the server-side SESSION_TTL_MS (24h).
             res.setHeader('Set-Cookie', [
-                'oauth_state=; HttpOnly; Path=/auth/callback; Max-Age=0; SameSite=Lax',
-                `session_id=${sessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}`,
+                `oauth_state=; HttpOnly; Path=/auth/callback; Max-Age=0; SameSite=Lax${COOKIE_SECURE}`,
+                `session_id=${sessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}${COOKIE_SECURE}`,
             ]);
             res.writeHead(302, { Location: '/' });
             res.end();
@@ -143,7 +145,7 @@ const server = http.createServer(async (req, res) => {
     if (reqUrl.pathname === '/auth/logout' && req.method === 'POST') {
         const { session_id } = parseCookies(req);
         if (session_id) sessions.delete(session_id);
-        res.setHeader('Set-Cookie', 'session_id=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
+        res.setHeader('Set-Cookie', `session_id=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${COOKIE_SECURE}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
         return;
@@ -192,6 +194,13 @@ const server = http.createServer(async (req, res) => {
 
     // Block dotfiles and dotdirectories (e.g. /.env, /.git/config)
     if (reqPath.split('/').some(seg => seg.startsWith('.'))) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden');
+        return;
+    }
+
+    // Block sensitive data files from being served as static assets
+    if (/^timeline.*\.json$/i.test(reqPath)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
         res.end('Forbidden');
         return;
