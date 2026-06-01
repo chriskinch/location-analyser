@@ -57,6 +57,8 @@ Thumbs.db
 # Personal timeline data files (sensitive data)
 timeline.json
 timeline.*.json
+# ...but keep test fixtures, which are synthetic data committed to the repo
+!tests/fixtures/*.json
 
 # Temporary files
 *.tmp

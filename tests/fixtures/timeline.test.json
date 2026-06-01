@@ -1,0 +1,38 @@
+{
+  "semanticSegments": [
+    {
+      "startTime": "2024-01-13T10:00:00.000Z",
+      "endTime": "2024-01-13T11:00:00.000Z",
+      "visit": { "topCandidate": { "placeId": "test-place-id" } }
+    },
+    {
+      "startTime": "2024-01-15T09:00:00.000Z",
+      "endTime": "2024-01-15T17:00:00.000Z",
+      "visit": { "topCandidate": { "placeId": "test-place-id" } }
+    },
+    {
+      "startTime": "2024-01-16T09:00:00.000Z",
+      "endTime": "2024-01-16T17:00:00.000Z",
+      "visit": { "topCandidate": { "placeId": "test-place-id" } }
+    },
+    {
+      "startTime": "2024-01-17T09:00:00.000Z",
+      "endTime": "2024-01-17T17:00:00.000Z",
+      "visit": { "topCandidate": { "placeId": "other-place-id" } }
+    },
+    {
+      "startTime": "2024-01-22T09:00:00.000Z",
+      "endTime": "2024-01-22T17:00:00.000Z",
+      "visit": { "topCandidate": { "placeId": "test-place-id" } }
+    },
+    {
+      "startTime": "2024-03-29T10:00:00.000Z",
+      "endTime": "2024-03-29T12:00:00.000Z",
+      "visit": { "topCandidate": { "placeId": "test-place-id" } }
+    },
+    {
+      "startTime": "2024-02-01T10:00:00.000Z",
+      "endTime": "2024-02-01T11:00:00.000Z"
+    }
+  ]
+}
