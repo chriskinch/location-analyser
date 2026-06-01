@@ -153,14 +153,28 @@ const server = http.createServer(async (req, res) => {
     // --- Auth: logout ---
     // POST is intentional: GET logout is vulnerable to CSRF via <img>/<link> requests.
     if (reqUrl.pathname === '/auth/logout' && req.method === 'POST') {
-        // Validate Origin when present to guard against cross-site logout.
+        // Guard against cross-site logout: validate Origin, falling back to Referer.
         // Derive the expected origin from the incoming request so that host
         // aliases (localhost vs 127.0.0.1) and proxied deployments work correctly.
+        const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+        const host = req.headers.host || `${hostname}:${port}`;
+        const expectedOrigin = `${proto}://${host}`;
         const origin = req.headers.origin;
+        const referer = req.headers.referer;
         if (origin) {
-            const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
-            const host = req.headers.host || `${hostname}:${port}`;
-            if (origin !== `${proto}://${host}`) {
+            if (origin !== expectedOrigin) {
+                res.writeHead(403, { 'Content-Type': 'text/plain' });
+                res.end('Forbidden');
+                return;
+            }
+        } else if (referer) {
+            try {
+                if (new URL(referer).origin !== expectedOrigin) {
+                    res.writeHead(403, { 'Content-Type': 'text/plain' });
+                    res.end('Forbidden');
+                    return;
+                }
+            } catch {
                 res.writeHead(403, { 'Content-Type': 'text/plain' });
                 res.end('Forbidden');
                 return;
