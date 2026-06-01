@@ -507,9 +507,13 @@ async function initAuthBar() {
             document.getElementById('authLoggedOut').style.display = 'none';
             document.getElementById('authLoggedIn').style.display = 'inline';
             document.getElementById('authUserName').textContent = data.user.name || data.user.email;
+        } else {
+            document.getElementById('authLoggedOut').style.display = '';
+            document.getElementById('authLoggedIn').style.display = 'none';
         }
     } catch {
-        // Server may not be running; auth bar stays in logged-out state
+        document.getElementById('authLoggedOut').style.display = '';
+        document.getElementById('authLoggedIn').style.display = 'none';
     }
 
     const signOutBtn = document.getElementById('signOutBtn');

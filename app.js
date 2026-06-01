@@ -6,13 +6,13 @@ const path = require('path');
 const crypto = require('crypto');
 const { analyzeTimelineData } = require('./analyzer');
 
-const hostname = '127.0.0.1';
-const port = 3000;
+const hostname = process.env.HOST || '127.0.0.1';
+const port = parseInt(process.env.PORT || '3000', 10);
 
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true' ? '; Secure' : '';
 
 // --- Google OAuth setup ---
-const REDIRECT_URI = `http://${hostname}:${port}/auth/callback`;
+const REDIRECT_URI = process.env.REDIRECT_URI || `http://${hostname}:${port}/auth/callback`;
 const SCOPES = ['openid', 'email', 'profile'];
 
 let OAuth2Client;
