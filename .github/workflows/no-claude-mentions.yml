@@ -71,6 +71,12 @@ jobs:
             check('PR title', pr.data.title);
             check('PR body', pr.data.body);
 
+            // Fail if the source branch name starts with "claude/".
+            const branch = pr.data.head.ref;
+            if (/^claude\//i.test(branch)) {
+              offenders.push(`branch name "${branch}"`);
+            }
+
             const issueComments = await github.paginate(
               github.rest.issues.listComments,
               { owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber }
@@ -92,8 +98,9 @@ jobs:
             if (offenders.length > 0) {
               const unique = [...new Set(offenders)];
               core.setFailed(
-                `Found "Claude" mention(s) in: ${unique.join(', ')}. ` +
-                `Please remove any mention of Claude from PR content.`
+                `Found "Claude" reference(s) in: ${unique.join(', ')}. ` +
+                `Please remove any mention of Claude from PR content and ` +
+                `rename the branch if it starts with "claude/".`
               );
             } else {
               core.info('No Claude mentions found.');
