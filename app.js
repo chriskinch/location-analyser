@@ -4,8 +4,8 @@ const url = require('url');
 const path = require('path');
 const { analyzeTimelineData } = require('./analyzer');
 
-const hostname = '127.0.0.1';
-const port = 3000;
+const hostname = process.env.HOST || '127.0.0.1';
+const port = Number(process.env.PORT) || 3000;
 
 const MAX_BODY_BYTES = 50 * 1024 * 1024; // 50 MB
 
@@ -13,18 +13,22 @@ function readBody(req) {
     return new Promise((resolve, reject) => {
         const chunks = [];
         let size = 0;
+        let tooLarge = false;
         req.on('data', chunk => {
             size += chunk.length;
             if (size > MAX_BODY_BYTES) {
-                req.destroy();
-                const err = new Error('Payload too large');
-                err.code = 'PAYLOAD_TOO_LARGE';
-                reject(err);
+                if (!tooLarge) {
+                    tooLarge = true;
+                    req.resume(); // drain without closing socket so caller can still send 413
+                    const err = new Error('Payload too large');
+                    err.code = 'PAYLOAD_TOO_LARGE';
+                    reject(err);
+                }
                 return;
             }
             chunks.push(chunk);
         });
-        req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        req.on('end', () => { if (!tooLarge) resolve(Buffer.concat(chunks).toString('utf8')); });
         req.on('error', reject);
     });
 }
@@ -116,5 +120,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, hostname, () => {
     console.log(`Server running at http://${hostname}:${port}/`);
     console.log(`Open your browser to: http://${hostname}:${port}/`);
-    console.log(`Make sure your 'timeline.json' and 'frontend.js' are in the same directory as this script.`);
+    console.log(`Upload your Timeline.json via the browser interface to begin analysis.`);
 });

@@ -604,7 +604,7 @@ Average: ${data.averageVisitsPerWorkingWeek}
     // Timeline file upload handler
     const timelineFileInput = document.getElementById('timelineFileInput');
     const uploadStatus = document.getElementById('uploadStatus');
-    if (timelineFileInput) {
+    if (timelineFileInput && uploadStatus) {
         timelineFileInput.addEventListener('change', async () => {
             const file = timelineFileInput.files[0];
             if (!file) return;

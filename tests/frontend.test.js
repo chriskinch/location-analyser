@@ -166,7 +166,7 @@ describe('timeline file upload handler', () => {
         });
 
         triggerFileChange(JSON.stringify({ semanticSegments: [] }));
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, 0));
 
         const status = document.getElementById('uploadStatus');
         expect(status.textContent).toContain('1,234 segments loaded');
@@ -180,7 +180,7 @@ describe('timeline file upload handler', () => {
         });
 
         triggerFileChange('{"notValid":true}');
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, 0));
 
         const status = document.getElementById('uploadStatus');
         expect(status.textContent).toContain('File must contain a semanticSegments array');
