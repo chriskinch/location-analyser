@@ -7,10 +7,23 @@ const { analyzeTimelineData } = require('./analyzer');
 const hostname = '127.0.0.1';
 const port = 3000;
 
+const MAX_BODY_BYTES = 50 * 1024 * 1024; // 50 MB
+
 function readBody(req) {
     return new Promise((resolve, reject) => {
         const chunks = [];
-        req.on('data', chunk => chunks.push(chunk));
+        let size = 0;
+        req.on('data', chunk => {
+            size += chunk.length;
+            if (size > MAX_BODY_BYTES) {
+                req.destroy();
+                const err = new Error('Payload too large');
+                err.code = 'PAYLOAD_TOO_LARGE';
+                reject(err);
+                return;
+            }
+            chunks.push(chunk);
+        });
         req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
         req.on('error', reject);
     });
@@ -39,9 +52,14 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true, segments: data.semanticSegments.length }));
         } catch (err) {
-            console.error('Upload error:', err);
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Upload failed' }));
+            if (err.code === 'PAYLOAD_TOO_LARGE') {
+                res.writeHead(413, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'File too large (50 MB limit)' }));
+            } else {
+                console.error('Upload error:', err);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Upload failed' }));
+            }
         }
         return;
     }
@@ -71,9 +89,10 @@ const server = http.createServer(async (req, res) => {
 
     // Serve static files — explicit allowlist to prevent path traversal and info disclosure
     const STATIC = {
-        '/':            ['index.html',  'text/html'],
-        '/index.html':  ['index.html',  'text/html'],
-        '/frontend.js': ['frontend.js', 'application/javascript'],
+        '/':                       ['index.html',          'text/html'],
+        '/index.html':             ['index.html',          'text/html'],
+        '/frontend.js':            ['frontend.js',         'application/javascript'],
+        '/archive_browser.html':   ['archive_browser.html','text/html'],
     };
     const entry = STATIC[reqUrl.pathname];
     if (!entry) {

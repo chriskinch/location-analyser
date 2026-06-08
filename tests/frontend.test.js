@@ -116,3 +116,74 @@ describe('DateRangePicker.formatDateForInput', () => {
         expect(picker.formatDateForInput(date)).toBe('2024-12-03');
     });
 });
+
+describe('timeline file upload handler', () => {
+    // Full DOM required so the DOMContentLoaded handler can wire up all elements.
+    // The listener was registered once on module import; dispatching the event
+    // manually re-runs it against the freshly set up DOM.
+    const FULL_DOM = `
+        <input type="file" id="timelineFileInput" accept=".json">
+        <span id="uploadStatus"></span>
+        <input type="text" id="placeIdInput" value="">
+        <date-range-picker id="datePicker"></date-range-picker>
+        <button id="analyzeButton">Analyze</button>
+        <button id="last90DaysButton">Last 90 Days</button>
+        <pre id="results"></pre>
+        <div id="calendarContainer"></div>
+    `;
+
+    let fetchMock;
+
+    beforeEach(() => {
+        localStorage.clear();
+        document.body.innerHTML = FULL_DOM;
+        // Default: fetch returns an error so runAnalysis() called on load doesn't throw.
+        fetchMock = vi.fn().mockResolvedValue({
+            ok: false,
+            json: async () => ({ error: 'no timeline' }),
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    function triggerFileChange(content) {
+        const file = new File([content], 'Timeline.json', { type: 'application/json' });
+        // jsdom doesn't implement Blob.prototype.text(); stub it directly.
+        file.text = () => Promise.resolve(content);
+        const input = document.getElementById('timelineFileInput');
+        Object.defineProperty(input, 'files', { value: [file], configurable: true });
+        input.dispatchEvent(new Event('change'));
+    }
+
+    it('shows segment count and green status on successful upload', async () => {
+        fetchMock.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ ok: true, segments: 1234 }),
+        });
+
+        triggerFileChange(JSON.stringify({ semanticSegments: [] }));
+        await new Promise(r => setTimeout(r, 50));
+
+        const status = document.getElementById('uploadStatus');
+        expect(status.textContent).toContain('1,234 segments loaded');
+        expect(status.style.color).toBe('rgb(46, 125, 50)'); // #2e7d32
+    });
+
+    it('shows server error message and red status on validation failure', async () => {
+        fetchMock.mockResolvedValueOnce({
+            ok: false,
+            json: async () => ({ error: 'File must contain a semanticSegments array' }),
+        });
+
+        triggerFileChange('{"notValid":true}');
+        await new Promise(r => setTimeout(r, 50));
+
+        const status = document.getElementById('uploadStatus');
+        expect(status.textContent).toContain('File must contain a semanticSegments array');
+        expect(status.style.color).toBe('rgb(198, 40, 40)'); // #c62828
+    });
+});
