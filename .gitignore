@@ -37,6 +37,8 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
+*.token
+.token-cache
 
 # IDE and Editor files
 .vscode/

@@ -18,10 +18,10 @@ A web application for analyzing workplace visits from Google Timeline/Takeout da
 
 ### Prerequisites
 
-- Node.js (any recent version)
-- Google Timeline/Takeout data (JSON format)
+- Node.js 18 or higher
+- A Google account
 
-### Installation
+### Setup
 
 1. Clone the repository:
 ```bash
@@ -34,17 +34,28 @@ cd location-analyser
 npm install
 ```
 
-3. Add your timeline data:
-   - Export your Google Timeline data via [Google Takeout](https://takeout.google.com/)
-   - Place the `timeline.json` file in the project root directory
-   - The file is automatically excluded from git via `.gitignore` for privacy
+3. Create a Google Cloud OAuth application:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/) and create a project
+   - Navigate to **APIs & Services > Credentials**
+   - Click **Create Credentials > OAuth 2.0 Client ID**
+   - Application type: **Web application**
+   - Under **Authorised redirect URIs**, add: `http://127.0.0.1:3000/auth/callback`
+   - Copy the **Client ID** and **Client secret**
 
-4. Start the server:
+4. Configure your credentials:
+```bash
+cp .env.example .env
+# Edit .env and fill in your GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+```
+
+5. Start the server:
 ```bash
 node app.js
 ```
 
-5. Open your browser to: http://127.0.0.1:3000/
+6. Open your browser to: http://127.0.0.1:3000/
+
+> **Without Google credentials:** The app still works if you manually place a `timeline.json` file (exported from [Google Takeout](https://takeout.google.com/)) in the project root. The Google login flow is optional until automated data fetching is implemented.
 
 ## Usage
 
@@ -110,8 +121,11 @@ Analyzes timeline data for a specific location and date range.
 ## Privacy
 
 - Timeline data files (`timeline*.json`) are automatically excluded from git
-- No data is sent to external servers - all processing happens locally
+- Timeline data analysis runs entirely locally — your location history is never sent to external servers
+- Google authentication requires a redirect to Google's login page; only OAuth tokens are exchanged with Google, not your timeline data
 - Manual date adjustments are stored only in your browser's localStorage
+- Google OAuth credentials (`.env`) are excluded from git — each user supplies their own from their own Google Cloud project
+- OAuth access tokens are held in server memory only and are cleared when the server restarts
 
 ## Contributing
 
