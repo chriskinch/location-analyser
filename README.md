@@ -19,7 +19,7 @@ A web application for analyzing workplace visits from Google Timeline/Takeout da
 ### Prerequisites
 
 - Node.js 18 or later
-- Google Timeline/Takeout data (JSON format)
+- Google Maps Timeline export (`Timeline.json` from your Android device)
 
 ### Installation
 

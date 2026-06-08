@@ -5,7 +5,15 @@ const path = require('path');
 const { analyzeTimelineData } = require('./analyzer');
 
 const hostname = process.env.HOST || '127.0.0.1';
-const port = Number(process.env.PORT) || 3000;
+const port = (() => {
+    const raw = process.env.PORT;
+    if (!raw) return 3000;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) {
+        throw new Error(`Invalid PORT environment variable: "${raw}"`);
+    }
+    return n;
+})();
 
 const MAX_BODY_BYTES = 50 * 1024 * 1024; // 50 MB
 
@@ -39,6 +47,12 @@ const server = http.createServer(async (req, res) => {
 
     // Upload timeline data file
     if (reqUrl.pathname === '/upload-timeline' && req.method === 'POST') {
+        const contentType = req.headers['content-type'] || '';
+        if (!contentType.includes('application/json')) {
+            res.writeHead(415, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+            return;
+        }
         try {
             const raw = await readBody(req);
             let data;
