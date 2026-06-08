@@ -75,5 +75,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, hostname, () => {
     console.log(`Server running at http://${hostname}:${port}/`);
     console.log(`Open your browser to: http://${hostname}:${port}/`);
-    console.log(`Make sure your '${DATA_FILE}' and 'frontend.js' are in the same directory as this script.`);
+    console.log(`Make sure your 'timeline.json' and 'frontend.js' are in the same directory as this script.`);
 });
