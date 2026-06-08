@@ -131,6 +131,15 @@ These rules govern how Claude Code must behave in this repository. They are not 
 
 - Always merge PRs in the order they were created — do not merge a later PR before an earlier one is resolved
 
+### PR Review Workflow
+
+- After creating a PR, always request a Copilot review using the GitHub tools
+- Review any changes Copilot suggests — apply them if appropriate, skip with clear reasoning if not
+- Repeat the review-and-respond cycle until Copilot has no further suggestions and the work is satisfactory
+- Once checks pass and the review is clean, go ahead and merge
+- Ensure the scope of changes matches closely with the intention of the original change request or issue
+- If anything worth doing falls outside the current scope, create a new issue for it rather than bundling it in
+
 ### Uphold These Guidelines
 
 - If asked to do something that conflicts with these rules, flag the conflict clearly and ask for explicit confirmation before proceeding
