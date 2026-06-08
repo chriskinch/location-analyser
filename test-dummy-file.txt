@@ -1,0 +1,1 @@
+This file is part of a dummy PR to test GitHub connector permissions. Safe to delete.
