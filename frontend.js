@@ -498,41 +498,9 @@ class CalendarRenderer {
 }
 
 
-// --- Auth bar initialisation ---
-async function initAuthBar() {
-    try {
-        const res = await fetch('/auth/status');
-        const data = await res.json();
-        if (data.authenticated) {
-            document.getElementById('authLoggedOut').style.display = 'none';
-            document.getElementById('authLoggedIn').style.display = 'inline';
-            document.getElementById('authUserName').textContent = data.user.name || data.user.email;
-        } else {
-            document.getElementById('authLoggedOut').style.display = '';
-            document.getElementById('authLoggedIn').style.display = 'none';
-        }
-    } catch {
-        document.getElementById('authLoggedOut').style.display = '';
-        document.getElementById('authLoggedIn').style.display = 'none';
-    }
-
-    const signOutBtn = document.getElementById('signOutBtn');
-    if (signOutBtn) {
-        signOutBtn.addEventListener('click', async () => {
-            try {
-                await fetch('/auth/logout', { method: 'POST' });
-            } catch {
-                // Server unavailable; reload anyway to reset UI state
-            }
-            location.reload();
-        });
-    }
-}
-
 // --- Main Frontend Logic to interact with the Node.js backend ---
+// This section handles the interaction between the HTML elements and your server.
 document.addEventListener('DOMContentLoaded', () => {
-    initAuthBar();
-
     // Get references to the HTML elements.
     const placeIdInput = document.getElementById('placeIdInput');
     const datePicker = document.getElementById('datePicker'); // Reference to your custom component
@@ -564,7 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Construct the URL for your Node.js backend API.
         // encodeURIComponent is crucial for properly handling special characters in URL parameters.
-        const apiUrl = `/analyze?placeId=${encodeURIComponent(placeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&excludedDates=${encodeURIComponent(JSON.stringify(excludedDates))}&manualVisitedDates=${encodeURIComponent(JSON.stringify(manualVisitedDates))}`;
+        const apiUrl = `http://127.0.0.1:3000/analyze?placeId=${encodeURIComponent(placeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&excludedDates=${encodeURIComponent(JSON.stringify(excludedDates))}&manualVisitedDates=${encodeURIComponent(JSON.stringify(manualVisitedDates))}`; // Add manualVisitedDates
 
         try {
             // Make a fetch request to your Node.js server.
@@ -639,5 +607,5 @@ Average: ${data.averageVisitsPerWorkingWeek}
 
 // Export utilities for unit testing (guard prevents this from running in the browser)
 if (typeof module !== 'undefined') {
-    module.exports = { debounce, CalendarRenderer, DateRangePicker, initAuthBar };
+    module.exports = { debounce, CalendarRenderer, DateRangePicker };
 }
