@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { formatDateToYYYYMMDD, analyzeTimelineData, UK_BANK_HOLIDAYS } from '../analyzer.js';
@@ -252,9 +252,17 @@ describe('analyzeTimelineData', () => {
         });
 
         it('throws when the data file does not exist', async () => {
-            await expect(
-                analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, null, '/nonexistent/path.json')
-            ).rejects.toThrow('Failed to read timeline data');
+            // The analyzer logs the underlying ENOENT via console.error before
+            // re-throwing; suppress it here so the expected error doesn't add
+            // noise to the test output.
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            try {
+                await expect(
+                    analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, null, '/nonexistent/path.json')
+                ).rejects.toThrow('Failed to read timeline data');
+            } finally {
+                errorSpy.mockRestore();
+            }
         });
 
         it('returns zero visits for a timeline with no visit segments', async () => {
