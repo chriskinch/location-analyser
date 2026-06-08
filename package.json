@@ -2,8 +2,9 @@
   "name": "takeout",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
+    "start": "node app.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -13,5 +14,8 @@
     "http-server": "^14.1.1",
     "jsdom": "^25.0.0",
     "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

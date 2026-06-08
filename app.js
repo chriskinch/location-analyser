@@ -4,23 +4,81 @@ const url = require('url');
 const path = require('path');
 const { analyzeTimelineData } = require('./analyzer');
 
-const hostname = '127.0.0.1';
-const port = 3000;
+const hostname = process.env.HOST || '127.0.0.1';
+const port = (() => {
+    const raw = process.env.PORT;
+    if (!raw) return 3000;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) {
+        throw new Error(`Invalid PORT environment variable: "${raw}"`);
+    }
+    return n;
+})();
+
+const MAX_BODY_BYTES = 50 * 1024 * 1024; // 50 MB
+
+function readBody(req) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        let size = 0;
+        let tooLarge = false;
+        req.on('data', chunk => {
+            size += chunk.length;
+            if (size > MAX_BODY_BYTES) {
+                if (!tooLarge) {
+                    tooLarge = true;
+                    req.resume(); // drain without closing socket so caller can still send 413
+                    const err = new Error('Payload too large');
+                    err.code = 'PAYLOAD_TOO_LARGE';
+                    reject(err);
+                }
+                return;
+            }
+            chunks.push(chunk);
+        });
+        req.on('end', () => { if (!tooLarge) resolve(Buffer.concat(chunks).toString('utf8')); });
+        req.on('error', reject);
+    });
+}
 
 // Create the HTTP server
 const server = http.createServer(async (req, res) => {
     const reqUrl = url.parse(req.url, true);
-    const filePath = path.join(__dirname, reqUrl.pathname);
 
-    // Set CORS headers for all responses to allow frontend to fetch from backend API
-    res.setHeader('Access-Control-Allow-Origin', '*'); 
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
+    // Upload timeline data file
+    if (reqUrl.pathname === '/upload-timeline' && req.method === 'POST') {
+        const contentType = req.headers['content-type'] || '';
+        if (!contentType.includes('application/json')) {
+            res.writeHead(415, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Content-Type must be application/json' }));
+            return;
+        }
+        try {
+            const raw = await readBody(req);
+            let data;
+            try { data = JSON.parse(raw); } catch {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid JSON' }));
+                return;
+            }
+            if (!data || !Array.isArray(data.semanticSegments)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'File must contain a semanticSegments array' }));
+                return;
+            }
+            await fs.promises.writeFile(path.join(__dirname, 'timeline.json'), raw);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, segments: data.semanticSegments.length }));
+        } catch (err) {
+            if (err.code === 'PAYLOAD_TOO_LARGE') {
+                res.writeHead(413, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'File too large (50 MB limit)' }));
+            } else {
+                console.error('Upload error:', err);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Upload failed' }));
+            }
+        }
         return;
     }
 
@@ -44,36 +102,37 @@ const server = http.createServer(async (req, res) => {
             res.statusCode = 500;
             res.end(JSON.stringify({ error: error.message || 'An error occurred during analysis.' }));
         }
-    } 
-    // Serve static files (index.html, frontend.js)
-    else {
-        let contentType = 'text/html';
-        if (reqUrl.pathname.endsWith('.js')) {
-            contentType = 'application/javascript';
-        } else if (reqUrl.pathname.endsWith('.css')) {
-            contentType = 'text/css';
-        }
-
-        fs.readFile(filePath === path.join(__dirname, '/') ? path.join(__dirname, 'index.html') : filePath, (err, data) => {
-            if (err) {
-                if (err.code === 'ENOENT') {
-                    res.writeHead(404, { 'Content-Type': 'text/plain' });
-                    res.end('404 Not Found');
-                } else {
-                    res.writeHead(500, { 'Content-Type': 'text/plain' });
-                    res.end(`Server Error: ${err.code}`);
-                }
-            } else {
-                res.writeHead(200, { 'Content-Type': contentType });
-                res.end(data);
-            }
-        });
+        return;
     }
+
+    // Serve static files — explicit allowlist to prevent path traversal and info disclosure
+    const STATIC = {
+        '/':                       ['index.html',          'text/html'],
+        '/index.html':             ['index.html',          'text/html'],
+        '/frontend.js':            ['frontend.js',         'application/javascript'],
+        '/archive_browser.html':   ['archive_browser.html','text/html'],
+    };
+    const entry = STATIC[reqUrl.pathname];
+    if (!entry) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('404 Not Found');
+        return;
+    }
+    const [filename, contentType] = entry;
+    fs.readFile(path.join(__dirname, filename), (err, data) => {
+        if (err) {
+            res.writeHead(500, { 'Content-Type': 'text/plain' });
+            res.end(`Server Error: ${err.code}`);
+        } else {
+            res.writeHead(200, { 'Content-Type': contentType });
+            res.end(data);
+        }
+    });
 });
 
 // Start the server
 server.listen(port, hostname, () => {
     console.log(`Server running at http://${hostname}:${port}/`);
     console.log(`Open your browser to: http://${hostname}:${port}/`);
-    console.log(`Make sure your 'timeline.json' and 'frontend.js' are in the same directory as this script.`);
+    console.log(`Upload your Timeline.json via the browser interface to begin analysis.`);
 });

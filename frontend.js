@@ -532,7 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Construct the URL for your Node.js backend API.
         // encodeURIComponent is crucial for properly handling special characters in URL parameters.
-        const apiUrl = `http://127.0.0.1:3000/analyze?placeId=${encodeURIComponent(placeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&excludedDates=${encodeURIComponent(JSON.stringify(excludedDates))}&manualVisitedDates=${encodeURIComponent(JSON.stringify(manualVisitedDates))}`; // Add manualVisitedDates
+        const apiUrl = `/analyze?placeId=${encodeURIComponent(placeId)}&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&excludedDates=${encodeURIComponent(JSON.stringify(excludedDates))}&manualVisitedDates=${encodeURIComponent(JSON.stringify(manualVisitedDates))}`;
 
         try {
             // Make a fetch request to your Node.js server.
@@ -600,6 +600,39 @@ Average: ${data.averageVisitsPerWorkingWeek}
         datePicker.setDateRange(startDate90DaysAgo, today);
         runAnalysis(); // Automatically run analysis after setting dates
     });
+
+    // Timeline file upload handler
+    const timelineFileInput = document.getElementById('timelineFileInput');
+    const uploadStatus = document.getElementById('uploadStatus');
+    if (timelineFileInput && uploadStatus) {
+        timelineFileInput.addEventListener('change', async () => {
+            const file = timelineFileInput.files[0];
+            if (!file) return;
+            uploadStatus.textContent = 'Uploading…';
+            uploadStatus.style.color = '#555';
+            try {
+                const text = await file.text();
+                const response = await fetch('/upload-timeline', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: text
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    uploadStatus.textContent = `Uploaded — ${result.segments.toLocaleString()} segments loaded.`;
+                    uploadStatus.style.color = '#2e7d32';
+                    runAnalysis();
+                } else {
+                    uploadStatus.textContent = `Upload failed: ${result.error}`;
+                    uploadStatus.style.color = '#c62828';
+                }
+            } catch (err) {
+                uploadStatus.textContent = `Upload error: ${err.message}`;
+                uploadStatus.style.color = '#c62828';
+            }
+            timelineFileInput.value = '';
+        });
+    }
 
     // Initial analysis run when the page loads
     runAnalysis();
