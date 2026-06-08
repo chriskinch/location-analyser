@@ -320,6 +320,21 @@
     <div class="container">
         <h1>LVA</h1>
 
+        <details>
+            <summary style="cursor:pointer; font-weight:600; color:#555; font-size:0.95em; margin-bottom:12px;">Upload Timeline Data</summary>
+            <p style="font-size:0.88em; color:#666; margin:8px 0 12px;">
+                Export <strong>Timeline.json</strong> from your Android device: Google Maps → Settings → Location → Google Location History → Export.
+                Then select the file below.
+            </p>
+            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px;">
+                <label for="timelineFileInput" style="display:inline-block; padding:10px 16px; background:#007bff; color:#fff; border-radius:8px; cursor:pointer; font-size:0.95em; font-weight:600; margin:0;">
+                    Choose file
+                    <input type="file" id="timelineFileInput" accept=".json" style="display:none;">
+                </label>
+                <span id="uploadStatus" style="font-size:0.9em; color:#555;"></span>
+            </div>
+        </details>
+
         <label for="placeIdInput">Place ID:</label>
         <input type="text" id="placeIdInput" value="ChIJmW6qHk0bdkgR0SPHeuB6bzs" placeholder="e.g., ChIJmW6qHk0bdkgR0SPHeuB6bzs">
 

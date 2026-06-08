@@ -7,6 +7,15 @@ const { analyzeTimelineData } = require('./analyzer');
 const hostname = '127.0.0.1';
 const port = 3000;
 
+function readBody(req) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        req.on('data', chunk => chunks.push(chunk));
+        req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        req.on('error', reject);
+    });
+}
+
 // Create the HTTP server
 const server = http.createServer(async (req, res) => {
     const reqUrl = url.parse(req.url, true);
@@ -21,6 +30,32 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
+        return;
+    }
+
+    // Upload timeline data file
+    if (reqUrl.pathname === '/upload-timeline' && req.method === 'POST') {
+        try {
+            const raw = await readBody(req);
+            let data;
+            try { data = JSON.parse(raw); } catch {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid JSON' }));
+                return;
+            }
+            if (!data || !Array.isArray(data.semanticSegments)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'File must contain a semanticSegments array' }));
+                return;
+            }
+            await fs.promises.writeFile(path.join(__dirname, 'timeline.json'), raw);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true, segments: data.semanticSegments.length }));
+        } catch (err) {
+            console.error('Upload error:', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Upload failed' }));
+        }
         return;
     }
 

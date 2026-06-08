@@ -601,6 +601,39 @@ Average: ${data.averageVisitsPerWorkingWeek}
         runAnalysis(); // Automatically run analysis after setting dates
     });
 
+    // Timeline file upload handler
+    const timelineFileInput = document.getElementById('timelineFileInput');
+    const uploadStatus = document.getElementById('uploadStatus');
+    if (timelineFileInput) {
+        timelineFileInput.addEventListener('change', async () => {
+            const file = timelineFileInput.files[0];
+            if (!file) return;
+            uploadStatus.textContent = 'Uploading…';
+            uploadStatus.style.color = '#555';
+            try {
+                const text = await file.text();
+                const response = await fetch('http://127.0.0.1:3000/upload-timeline', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: text
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    uploadStatus.textContent = `Uploaded — ${result.segments.toLocaleString()} segments loaded.`;
+                    uploadStatus.style.color = '#2e7d32';
+                    runAnalysis();
+                } else {
+                    uploadStatus.textContent = `Upload failed: ${result.error}`;
+                    uploadStatus.style.color = '#c62828';
+                }
+            } catch (err) {
+                uploadStatus.textContent = `Upload error: ${err.message}`;
+                uploadStatus.style.color = '#c62828';
+            }
+            timelineFileInput.value = '';
+        });
+    }
+
     // Initial analysis run when the page loads
     runAnalysis();
 });

@@ -34,17 +34,16 @@ cd location-analyser
 npm install
 ```
 
-3. Add your timeline data:
-   - Export your Google Timeline data via [Google Takeout](https://takeout.google.com/)
-   - Place the `timeline.json` file in the project root directory
-   - The file is automatically excluded from git via `.gitignore` for privacy
+3. Export your timeline data from your Android device:
+   - Open **Google Maps** → your profile picture → **Settings** → **Location** → **Google Location History** → **Export**
+   - This downloads a `Timeline.json` file to your device; transfer it to your computer
 
 4. Start the server:
 ```bash
 node app.js
 ```
 
-5. Open your browser to: http://127.0.0.1:3000/
+5. Open your browser to http://127.0.0.1:3000/ and upload your `Timeline.json` via the **Upload Timeline Data** section at the top of the page
 
 ## Usage
 
