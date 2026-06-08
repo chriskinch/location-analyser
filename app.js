@@ -15,7 +15,7 @@ const port = (() => {
     return n;
 })();
 
-const MAX_BODY_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_BODY_BYTES = 200 * 1024 * 1024; // 200 MB
 
 function readBody(req) {
     return new Promise((resolve, reject) => {
@@ -72,7 +72,7 @@ const server = http.createServer(async (req, res) => {
         } catch (err) {
             if (err.code === 'PAYLOAD_TOO_LARGE') {
                 res.writeHead(413, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: 'File too large (50 MB limit)' }));
+                res.end(JSON.stringify({ error: 'File too large (200 MB limit)' }));
             } else {
                 console.error('Upload error:', err);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
