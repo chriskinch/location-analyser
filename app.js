@@ -19,19 +19,6 @@ function readBody(req) {
 // Create the HTTP server
 const server = http.createServer(async (req, res) => {
     const reqUrl = url.parse(req.url, true);
-    const filePath = path.join(__dirname, reqUrl.pathname);
-
-    // Set CORS headers for all responses to allow frontend to fetch from backend API
-    res.setHeader('Access-Control-Allow-Origin', '*'); 
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
-        return;
-    }
 
     // Upload timeline data file
     if (reqUrl.pathname === '/upload-timeline' && req.method === 'POST') {
@@ -79,31 +66,31 @@ const server = http.createServer(async (req, res) => {
             res.statusCode = 500;
             res.end(JSON.stringify({ error: error.message || 'An error occurred during analysis.' }));
         }
-    } 
-    // Serve static files (index.html, frontend.js)
-    else {
-        let contentType = 'text/html';
-        if (reqUrl.pathname.endsWith('.js')) {
-            contentType = 'application/javascript';
-        } else if (reqUrl.pathname.endsWith('.css')) {
-            contentType = 'text/css';
-        }
-
-        fs.readFile(filePath === path.join(__dirname, '/') ? path.join(__dirname, 'index.html') : filePath, (err, data) => {
-            if (err) {
-                if (err.code === 'ENOENT') {
-                    res.writeHead(404, { 'Content-Type': 'text/plain' });
-                    res.end('404 Not Found');
-                } else {
-                    res.writeHead(500, { 'Content-Type': 'text/plain' });
-                    res.end(`Server Error: ${err.code}`);
-                }
-            } else {
-                res.writeHead(200, { 'Content-Type': contentType });
-                res.end(data);
-            }
-        });
+        return;
     }
+
+    // Serve static files — explicit allowlist to prevent path traversal and info disclosure
+    const STATIC = {
+        '/':            ['index.html',  'text/html'],
+        '/index.html':  ['index.html',  'text/html'],
+        '/frontend.js': ['frontend.js', 'application/javascript'],
+    };
+    const entry = STATIC[reqUrl.pathname];
+    if (!entry) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('404 Not Found');
+        return;
+    }
+    const [filename, contentType] = entry;
+    fs.readFile(path.join(__dirname, filename), (err, data) => {
+        if (err) {
+            res.writeHead(500, { 'Content-Type': 'text/plain' });
+            res.end(`Server Error: ${err.code}`);
+        } else {
+            res.writeHead(200, { 'Content-Type': contentType });
+            res.end(data);
+        }
+    });
 });
 
 // Start the server
