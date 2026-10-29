@@ -300,21 +300,18 @@ describe('analyzeTimelineData edge cases', () => {
         expect(result.visitedDates).toEqual(['2024-01-15']);
     });
 
-    it('buckets visits by UTC date, not local date', async () => {
-        // 23:30 UTC on 14 June is 00:30 BST on 15 June, but the analyzer counts it
-        // as 14 June. CalendarRenderer formats dates in local time, so a late-night
-        // BST visit can land on a different day than the user expects. This test
-        // pins current behaviour; see PR description.
-        // Run under Europe/London so local-date bucketing would give a different answer.
+    it('buckets visits by UK date, whatever the machine time zone', async () => {
+        // 23:30 UTC on 14 June is 00:30 BST on 15 June, so the visit counts as 15 June.
+        // Run under New York time, where both the UTC and the local date are 14 June.
         const originalTZ = process.env.TZ;
-        process.env.TZ = 'Europe/London';
+        process.env.TZ = 'America/New_York';
         try {
-            expect(new Date('2024-06-14T23:30:00.000Z').getDate()).toBe(15); // TZ took effect
+            expect(new Date('2024-06-14T23:30:00.000Z').getDate()).toBe(14); // TZ took effect
             const file = writeTimeline({ semanticSegments: [visit('2024-06-14T23:30:00.000Z', '2024-06-15T01:00:00.000Z')] });
             const result = await analyzeTimelineData(
                 'test-place-id', '2024-06-10T00:00:00.000Z', '2024-06-16T23:59:59.000Z', null, null, file
             );
-            expect(result.visitedDates).toEqual(['2024-06-14']);
+            expect(result.visitedDates).toEqual(['2024-06-15']);
         } finally {
             if (originalTZ === undefined) delete process.env.TZ;
             else process.env.TZ = originalTZ;
