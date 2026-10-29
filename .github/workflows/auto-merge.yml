@@ -40,56 +40,54 @@ jobs:
               owner, repo, base: 'main', state: 'open', sort: 'created', direction: 'asc', per_page: 100,
             });
 
-            const setAutoMerge = async (pr, on) => {
-              const method = pr.auto_merge?.merge_method;
-              if (on ? method === 'merge' : !method) return;
-              try {
-                // Also clears a squash/rebase request before re-arming it as a merge commit.
-                if (method) {
-                  await github.graphql(
-                    `mutation($id: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }`,
-                    { id: pr.node_id });
-                }
-                // expectedHeadOid refuses to arm a head pushed after the review check.
-                // A later push re-runs this workflow (synchronize), which disarms it.
-                if (on) {
-                  await github.graphql(
-                    `mutation($id: ID!, $oid: GitObjectID!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: MERGE, expectedHeadOid: $oid }) { clientMutationId } }`,
-                    { id: pr.node_id, oid: pr.head.sha });
-                }
-                core.info(`#${pr.number}: auto-merge ${on ? 'enabled' : 'disabled'}`);
-              } catch (e) {
-                core.warning(`#${pr.number}: could not ${on ? 'enable' : 'disable'} auto-merge: ${e.message}`);
-              }
+            const disable = async (pr) => {
+              if (!pr.auto_merge) return;
+              await github.graphql(
+                `mutation($id: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }`,
+                { id: pr.node_id });
+              core.info(`#${pr.number}: auto-merge disabled`);
             };
 
-            let blocked = false;
-            for (const pr of prs) {
-              if (blocked) {
-                await setAutoMerge(pr, false);
-                continue;
-              }
-              blocked = true;
-              const labelled = pr.labels.some((l) => l.name === 'automerge');
-              const reviews = labelled
-                ? await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: pr.number, per_page: 100 })
-                : [];
-              const reviewed = reviews.some(
-                (r) => r.user?.login === 'copilot-pull-request-reviewer[bot]' && r.commit_id === pr.head.sha
-              );
-              if (!labelled || !reviewed) {
-                core.info(`#${pr.number} is next in line but not ready (label: ${labelled}, Copilot review of head: ${reviewed})`);
-                await setAutoMerge(pr, false);
-                continue;
-              }
-              // Auto-merge cannot be enabled on a PR that is already mergeable,
-              // so try merging first and fall back to arming auto-merge.
-              try {
-                await github.rest.pulls.merge({ owner, repo, pull_number: pr.number, merge_method: 'merge', sha: pr.head.sha });
-                core.info(`#${pr.number}: merged`);
-                blocked = false;
-              } catch (e) {
-                core.info(`#${pr.number}: not mergeable yet (${e.message})`);
-                await setAutoMerge(pr, true);
-              }
+            // Disarm every newer PR before touching the oldest, so GitHub cannot
+            // auto-merge one out of order meanwhile. A failed disable throws and
+            // fails the run rather than leaving the queue unguarded.
+            const [head, ...rest] = prs;
+            for (const pr of rest) await disable(pr);
+            if (!head) return;
+
+            const labelled = head.labels.some((l) => l.name === 'automerge');
+            const reviews = labelled
+              ? await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: head.number, per_page: 100 })
+              : [];
+            const reviewed = reviews.some(
+              (r) => r.user?.login === 'copilot-pull-request-reviewer[bot]' && r.commit_id === head.head.sha
+            );
+            if (!labelled || !reviewed) {
+              core.info(`#${head.number} is next in line but not ready (label: ${labelled}, Copilot review of head: ${reviewed})`);
+              await disable(head);
+              return;
+            }
+
+            // Auto-merge cannot be enabled on a PR that is already mergeable,
+            // so try merging first and fall back to arming auto-merge. The next
+            // PR in line is handled by the next run.
+            try {
+              await github.rest.pulls.merge({ owner, repo, pull_number: head.number, merge_method: 'merge', sha: head.head.sha });
+              core.info(`#${head.number}: merged`);
+              return;
+            } catch (e) {
+              core.info(`#${head.number}: not mergeable yet (${e.message})`);
+            }
+            if (head.auto_merge?.merge_method === 'merge') return;
+            try {
+              // Clears a squash/rebase request before re-arming it as a merge commit.
+              await disable(head);
+              // expectedHeadOid refuses to arm a head pushed after the review check.
+              // A later push re-runs this workflow (synchronize), which disarms it.
+              await github.graphql(
+                `mutation($id: ID!, $oid: GitObjectID!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: MERGE, expectedHeadOid: $oid }) { clientMutationId } }`,
+                { id: head.node_id, oid: head.head.sha });
+              core.info(`#${head.number}: auto-merge enabled`);
+            } catch (e) {
+              core.warning(`#${head.number}: could not enable auto-merge: ${e.message}`);
             }
