@@ -1,27 +1,18 @@
 import js from '@eslint/js';
-import globals from 'globals';
+import tseslint from 'typescript-eslint';
 
+// typescript-eslint turns off no-undef for .ts files (tsc catches undefined names), so no globals are needed.
 export default [
+    { ignores: ['dist/'] },
     js.configs.recommended,
+    ...tseslint.configs.recommended,
     {
         // ponytail: existing violations are warnings so CI can gate new code; promote to errors once fixed.
-        rules: { 'no-unused-vars': 'warn', 'preserve-caught-error': 'warn' },
-    },
-    {
-        files: ['app.js', 'analyzer.js'],
-        languageOptions: { sourceType: 'commonjs', globals: globals.node },
-    },
-    {
-        // Loaded via <script type="module">, with a module.exports guard for tests.
-        files: ['frontend.js'],
-        languageOptions: { globals: { ...globals.browser, module: 'readonly' } },
-    },
-    {
-        files: ['tests/**', '*.config.*'],
-        languageOptions: { globals: globals.node },
-    },
-    {
-        files: ['tests/frontend.test.js'],
-        languageOptions: { globals: globals.browser },
+        rules: {
+            '@typescript-eslint/no-unused-vars': 'warn',
+            'preserve-caught-error': 'warn',
+            'prefer-const': 'warn',
+            '@typescript-eslint/no-this-alias': 'warn',
+        },
     },
 ];
