@@ -1,0 +1,18 @@
+{
+    // Type-checks everything (sources, tests, config). Builds use tsconfig.server.json / tsconfig.frontend.json.
+    "compilerOptions": {
+        "strict": true,
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "module": "preserve",
+        "moduleResolution": "bundler",
+        "types": ["node"],
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "rootDir": ".",
+        "outDir": "dist",
+        "noEmit": true
+    },
+    "include": ["*.ts", "tests/**/*.ts"]
+}
