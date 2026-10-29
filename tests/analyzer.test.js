@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { formatDateToYYYYMMDD, analyzeTimelineData, UK_BANK_HOLIDAYS } from '../analyzer.js';
@@ -273,5 +275,143 @@ describe('analyzeTimelineData', () => {
             // Segments without a visit property are ignored (the segment on 2024-02-01 has no visit)
             expect(Array.isArray(result.visitedDates)).toBe(true);
         });
+    });
+});
+
+describe('analyzeTimelineData edge cases', () => {
+    let dir;
+    beforeAll(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'analyzer-test-')); });
+    afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+    let n = 0;
+    function writeTimeline(data) {
+        const file = path.join(dir, `timeline-${n++}.json`);
+        fs.writeFileSync(file, typeof data === 'string' ? data : JSON.stringify(data));
+        return file;
+    }
+    const visit = (startTime, endTime, placeId = 'test-place-id') =>
+        ({ startTime, endTime, visit: { topCandidate: { placeId } } });
+
+    it('counts a visit that spans midnight on its start day only', async () => {
+        const file = writeTimeline({ semanticSegments: [
+            visit('2024-01-15T22:00:00.000Z', '2024-01-16T02:00:00.000Z'),
+        ] });
+        const result = await analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, null, file);
+        expect(result.visitedDates).toEqual(['2024-01-15']);
+    });
+
+    it('buckets visits by UTC date, not local date', async () => {
+        // 23:30 UTC on 14 June is 00:30 BST on 15 June, but the analyzer counts it
+        // as 14 June. CalendarRenderer formats dates in local time, so a late-night
+        // BST visit can land on a different day than the user expects. This test
+        // pins current behaviour; see PR description.
+        const file = writeTimeline({ semanticSegments: [visit('2024-06-14T23:30:00.000Z', '2024-06-15T01:00:00.000Z')] });
+        const result = await analyzeTimelineData(
+            'test-place-id', '2024-06-10T00:00:00.000Z', '2024-06-16T23:59:59.000Z', null, null, file
+        );
+        expect(result.visitedDates).toEqual(['2024-06-14']);
+    });
+
+    it('counts several visits on the same day once', async () => {
+        const file = writeTimeline({ semanticSegments: [
+            visit('2024-01-15T09:00:00.000Z', '2024-01-15T12:00:00.000Z'),
+            visit('2024-01-15T13:00:00.000Z', '2024-01-15T17:00:00.000Z'),
+        ] });
+        const result = await analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, null, file);
+        expect(result.totalUniqueVisitDays).toBe(1);
+    });
+
+    it('returns zero visits but still counts working days for a range with no visits', async () => {
+        const result = await analyzeTimelineData(
+            'test-place-id', '2024-01-08T00:00:00.000Z', '2024-01-12T23:59:59.000Z', null, null, FIXTURE
+        );
+        expect(result.totalUniqueVisitDays).toBe(0);
+        expect(result.totalEligibleWorkingDays).toBe(5);
+        expect(result.averageVisitsPerWorkingWeek).toBe(0);
+    });
+
+    it.each([
+        ['an empty semanticSegments array', { semanticSegments: [] }],
+        ['no semanticSegments key', {}],
+    ])('treats a timeline with %s as having no visits', async (_, data) => {
+        const result = await analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, null, writeTimeline(data));
+        expect(result.visitedDates).toEqual([]);
+        expect(result.totalEligibleWorkingDays).toBe(5);
+    });
+
+    it('ignores segments without a visit, topCandidate or placeId', async () => {
+        const file = writeTimeline({ semanticSegments: [
+            { startTime: '2024-01-15T09:00:00.000Z', endTime: '2024-01-15T10:00:00.000Z' },
+            { startTime: '2024-01-16T09:00:00.000Z', endTime: '2024-01-16T10:00:00.000Z', visit: {} },
+            { startTime: '2024-01-17T09:00:00.000Z', endTime: '2024-01-17T10:00:00.000Z', visit: { topCandidate: {} } },
+        ] });
+        const result = await analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, null, file);
+        expect(result.visitedDates).toEqual([]);
+    });
+
+    it('skips a matching visit with an invalid start timestamp', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const file = writeTimeline({ semanticSegments: [
+                visit('garbage', '2024-01-15T10:00:00.000Z'),
+                visit('2024-01-16T09:00:00.000Z', '2024-01-16T10:00:00.000Z'),
+            ] });
+            const result = await analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, null, file);
+            expect(result.visitedDates).toEqual(['2024-01-16']);
+            expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('garbage'));
+        } finally {
+            warnSpy.mockRestore();
+        }
+    });
+
+    it('counts partial days at both ends of the range as eligible', async () => {
+        // Range is Mon 12:00 → Tue 08:00; both days are eligible, but Tue's 09:00 visit is out of range.
+        const result = await analyzeTimelineData(
+            'test-place-id', '2024-01-15T12:00:00.000Z', '2024-01-16T08:00:00.000Z', null, null, FIXTURE
+        );
+        expect(result.eligibleWorkingDates).toEqual(['2024-01-15', '2024-01-16']);
+        expect(result.visitedDates).toEqual([]);
+    });
+
+    it('returns empty results when startDate is after endDate', async () => {
+        const result = await analyzeTimelineData('test-place-id', WEEK_END, WEEK_START, null, null, FIXTURE);
+        expect(result.totalEligibleWorkingDays).toBe(0);
+        expect(result.totalUniqueVisitDays).toBe(0);
+        expect(result.averageVisitsPerWorkingWeek).toBe(0);
+    });
+
+    it('counts manual visited dates outside the range and on weekends', async () => {
+        // Manual dates are not filtered against the range or the working-day rules.
+        // Likely bug: the frontend sends every manual date in localStorage, so a manual
+        // visit from an earlier period inflates this period's count and average.
+        // This test pins current behaviour; see PR description.
+        const manual = JSON.stringify(['2023-01-01', '2024-01-20']);
+        const result = await analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, manual, FIXTURE);
+        expect(result.visitedDates).toEqual(['2023-01-01', '2024-01-15', '2024-01-16', '2024-01-20']);
+        expect(result.totalUniqueVisitDays).toBe(4);
+    });
+
+    it('rejects with a SyntaxError for malformed excludedDates JSON', async () => {
+        await expect(
+            analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, '[not json', null, FIXTURE)
+        ).rejects.toThrow(SyntaxError);
+    });
+
+    it('rejects with a SyntaxError for malformed manualVisitedDates JSON', async () => {
+        await expect(
+            analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, '[not json', FIXTURE)
+        ).rejects.toThrow(SyntaxError);
+    });
+
+    it('treats empty-string excluded/manual params as none', async () => {
+        const result = await analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, '', '', FIXTURE);
+        expect(result.totalEligibleWorkingDays).toBe(5);
+        expect(result.totalUniqueVisitDays).toBe(2);
+    });
+
+    it('rejects with a SyntaxError when the timeline file is not valid JSON', async () => {
+        await expect(
+            analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, null, writeTimeline('{oops'))
+        ).rejects.toThrow(SyntaxError);
     });
 });
