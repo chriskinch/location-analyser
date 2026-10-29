@@ -137,7 +137,7 @@ These rules govern how Claude Code must behave in this repository. They are not 
 - `.github/workflows/auto-merge.yml` arms GitHub auto-merge only on the oldest open PR against `main`, and only once that PR is labelled and Copilot has reviewed its latest commit. It switches auto-merge off on every later PR, so creation order holds
 - The "Merge to main" ruleset holds the merge until the `test` and `check` checks pass and every review thread is resolved. Resolve or reply to each Copilot comment to unblock it
 - An unlabelled or failing PR at the front of the line holds up every PR behind it. Fix it, merge it by hand, or close it
-- Merges made by the workflow don't trigger further runs, so the next PR in line is picked up by the 15-minute schedule. Run the workflow manually to go sooner
+- Copilot reviews and merges made by the workflow are picked up by the 15-minute schedule, not by an event. Run the workflow manually to go sooner
 
 ### PR Review Workflow
 
