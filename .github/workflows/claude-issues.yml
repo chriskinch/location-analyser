@@ -126,9 +126,6 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-
       - name: Collect trusted issue context
         run: *collect
 
@@ -152,6 +149,10 @@ jobs:
           else
             git switch -c "$branch"
           fi
+
+      # After branch selection, so a resumed branch gets its own dependencies.
+      - name: Install dependencies
+        run: npm ci
 
       - name: Implement
         uses: anthropics/claude-code-action@v1
