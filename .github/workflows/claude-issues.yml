@@ -145,7 +145,13 @@ jobs:
             *) type=feat ;;
           esac
           slug=$(printf '%s' "$TITLE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//' | cut -c1-40 | sed -E 's/-+$//')
-          git switch -c "$type/$ISSUE-${slug:-issue}"
+          branch="$type/$ISSUE-${slug:-issue}"
+          # Resume work an earlier run already pushed, so a retry doesn't diverge from it.
+          if git fetch origin "$branch"; then
+            git switch -c "$branch" FETCH_HEAD
+          else
+            git switch -c "$branch"
+          fi
 
       - name: Implement
         uses: anthropics/claude-code-action@v1
@@ -154,7 +160,7 @@ jobs:
           settings: '{"attribution":{"commit":"","pr":""}}'
           claude_args: >-
             --add-dir ${{ runner.temp }}
-            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(npm test *),Bash(npx vitest *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git add *),Bash(git commit *),Bash(git push -u origin HEAD),Bash(gh pr create *),Bash(gh pr edit *),Bash(gh issue comment *)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(npm test *),Bash(npx vitest *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git add *),Bash(git commit *),Bash(git push -u origin HEAD),Bash(gh pr view *),Bash(gh pr create *),Bash(gh pr edit *),Bash(gh issue comment *)"
           prompt: |
             Implement GitHub issue #${{ github.event.issue.number }} in ${{ github.repository }}.
 
@@ -165,6 +171,9 @@ jobs:
             don't guess: comment on the issue with what's missing and stop.
 
             You are already on the branch for this work; do not create or switch branches.
+            If it already has commits from an earlier run (check `git log origin/main..HEAD`),
+            continue from them. If `gh pr view` shows an open PR for this branch, push to it
+            and skip step 5 instead of opening another.
             1. Make the smallest change that meets the acceptance criteria. Add or update
                Vitest tests for new behaviour.
             2. Run `npm test` and fix failures until it passes.
