@@ -187,3 +187,151 @@ describe('timeline file upload handler', () => {
         expect(status.style.color).toBe('rgb(198, 40, 40)'); // #c62828
     });
 });
+
+describe('CalendarRenderer interactions', () => {
+    // January 2024: the 15th–19th are Mon–Fri. The 16th is visited in the timeline data.
+    const ELIGIBLE = ['2024-01-15', '2024-01-16', '2024-01-17', '2024-01-18', '2024-01-19'];
+    let renderer, refresh, logSpy;
+
+    function setup() {
+        refresh = vi.fn();
+        renderer = new CalendarRenderer('cal', refresh);
+        renderer.currentMonth = new Date(2024, 0, 1);
+        renderer.setDates(['2024-01-16'], ELIGIBLE, '2024-01-15T00:00:00', '2024-01-19T23:59:59');
+    }
+    const day = n => document.querySelectorAll('#cal .calendar-day:not(.other-month)')[n - 1];
+    const stored = key => JSON.parse(localStorage.getItem(key));
+    const click = el => { el.dispatchEvent(new MouseEvent('click')); vi.advanceTimersByTime(200); };
+    // A real double-click fires click, click, dblclick.
+    const dblclick = el => {
+        el.dispatchEvent(new MouseEvent('click'));
+        el.dispatchEvent(new MouseEvent('click'));
+        el.dispatchEvent(new MouseEvent('dblclick'));
+        vi.advanceTimersByTime(200);
+    };
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        localStorage.clear();
+        document.body.innerHTML = '<div id="cal"></div>';
+    });
+
+    afterEach(() => {
+        logSpy.mockRestore();
+        vi.useRealTimers();
+    });
+
+    it('renders eligible, visited, weekend and bank holiday classes', () => {
+        setup();
+        expect(day(15).classList).toContain('eligible-working-day');
+        expect(day(16).classList).toContain('visited-day');
+        expect(day(16).querySelector('.day-indicator').textContent).toBe('Visited');
+        expect(day(20).classList).toContain('weekend');
+        expect(day(1).classList).toContain('bank-holiday');
+    });
+
+    it('loads excluded and manual visited dates from localStorage', () => {
+        localStorage.setItem('excludedDates', JSON.stringify(['2024-01-17']));
+        localStorage.setItem('manualVisitedDates', JSON.stringify(['2024-01-18']));
+        setup();
+        expect(day(17).classList).toContain('excluded-day');
+        expect(day(17).classList).not.toContain('eligible-working-day');
+        expect(day(18).classList).toContain('manual-visited-day');
+    });
+
+    it('single click excludes a day, saves it and triggers a refresh', () => {
+        setup();
+        click(day(15));
+        expect(renderer.excludedDates.has('2024-01-15')).toBe(true);
+        expect(stored('excludedDates')).toEqual(['2024-01-15']);
+        expect(day(15).classList).toContain('excluded-day');
+        expect(day(15).classList).not.toContain('eligible-working-day');
+        expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits 200ms before applying a single click', () => {
+        setup();
+        day(15).dispatchEvent(new MouseEvent('click'));
+        vi.advanceTimersByTime(199);
+        expect(renderer.excludedDates.size).toBe(0);
+        vi.advanceTimersByTime(1);
+        expect(renderer.excludedDates.size).toBe(1);
+    });
+
+    it('a second single click re-includes the day', () => {
+        setup();
+        click(day(15));
+        click(day(15));
+        expect(stored('excludedDates')).toEqual([]);
+        expect(day(15).classList).not.toContain('excluded-day');
+        expect(day(15).classList).toContain('eligible-working-day');
+        expect(refresh).toHaveBeenCalledTimes(2);
+    });
+
+    it('double click marks a day as manually visited without excluding it', () => {
+        setup();
+        dblclick(day(17));
+        expect(stored('manualVisitedDates')).toEqual(['2024-01-17']);
+        expect(localStorage.getItem('excludedDates')).toBeNull();
+        expect(day(17).classList).toContain('manual-visited-day');
+        expect(day(17).classList).toContain('visited-day');
+        expect(day(17).querySelector('.day-indicator').textContent).toBe('Visited');
+        expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('a second double click unmarks the manual visit', () => {
+        setup();
+        dblclick(day(17));
+        dblclick(day(17));
+        expect(stored('manualVisitedDates')).toEqual([]);
+        expect(day(17).classList).not.toContain('visited-day');
+        expect(day(17).querySelector('.day-indicator')).toBeNull();
+    });
+
+    it('double click does nothing on a day already visited in the timeline', () => {
+        setup();
+        dblclick(day(16));
+        expect(renderer.manualVisitedDates.size).toBe(0);
+        expect(localStorage.getItem('manualVisitedDates')).toBeNull();
+        expect(refresh).not.toHaveBeenCalled();
+    });
+
+    it('double click on an excluded day un-excludes it and marks it visited', () => {
+        setup();
+        click(day(17));
+        dblclick(day(17));
+        expect(stored('excludedDates')).toEqual([]);
+        expect(stored('manualVisitedDates')).toEqual(['2024-01-17']);
+        expect(day(17).classList).not.toContain('excluded-day');
+        expect(day(17).classList).toContain('eligible-working-day');
+    });
+
+    it('single click on a manually visited day removes the visit and excludes it', () => {
+        setup();
+        dblclick(day(17));
+        click(day(17));
+        expect(stored('manualVisitedDates')).toEqual([]);
+        expect(stored('excludedDates')).toEqual(['2024-01-17']);
+        expect(day(17).classList).not.toContain('visited-day');
+        expect(day(17).classList).toContain('excluded-day');
+    });
+
+    it('on render, drops a date from excludedDates when it is also manually visited', () => {
+        localStorage.setItem('excludedDates', JSON.stringify(['2024-01-17']));
+        localStorage.setItem('manualVisitedDates', JSON.stringify(['2024-01-17']));
+        setup();
+        expect(stored('excludedDates')).toEqual([]);
+        expect(day(17).classList).not.toContain('excluded-day');
+    });
+
+    it('navigates months with the prev/next buttons, keeping state', () => {
+        setup();
+        click(day(15));
+        document.querySelector('#nextMonth').click();
+        expect(document.querySelector('#cal h3').textContent).toMatch(/February/);
+        document.querySelector('#prevMonth').click();
+        expect(document.querySelector('#cal h3').textContent).toMatch(/January/);
+        expect(day(15).classList).toContain('excluded-day');
+    });
+});
