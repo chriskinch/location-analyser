@@ -45,6 +45,12 @@ describe('UK local day boundaries', () => {
         expect(r.visitedDates).toEqual(['2026-07-07']);
     });
 
+    it('ignores a manual visit on the day before a BST start date', async () => {
+        const r = await analyzeTimelineData(PLACE, bst('2026-06-01', '00:00'), bst('2026-06-30', '23:59'), null,
+            JSON.stringify(['2026-05-31', '2026-06-03']), file);
+        expect(r.visitedDates).toEqual(['2026-06-01', '2026-06-02', '2026-06-03']);
+    });
+
     it('keeps GMT ranges unchanged', async () => {
         const r = await analyzeTimelineData(PLACE, '2026-12-01T00:00:00.000Z', '2026-12-31T23:59:00.000Z', null, null, file);
         expect(r.totalEligibleWorkingDays).toBe(21);
