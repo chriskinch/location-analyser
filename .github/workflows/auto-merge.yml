@@ -1,0 +1,94 @@
+name: Auto Merge
+
+on:
+  # pull_request_target sources this workflow from the base branch, so a PR
+  # cannot change how it gets merged. Safe here: no PR code is checked out.
+  pull_request_target:
+    types: [opened, reopened, closed, synchronize, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted]
+  # Merges made with GITHUB_TOKEN trigger no further workflow runs, so the
+  # schedule arms the next PR in line once the previous one has merged.
+  # ponytail: up to 15 min between queued merges; use an app token if that matters.
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge
+
+jobs:
+  arm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Arm auto-merge on the oldest ready PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // PRs merge in creation order (CLAUDE.md). Only the oldest open
+            // PR against main may merge, and only once it carries the
+            // `automerge` label and Copilot has reviewed its latest commit.
+            // The "Merge to main" ruleset then holds the merge until the
+            // required checks pass and every review thread is resolved.
+            // Every later PR has auto-merge switched off so it cannot jump
+            // the queue.
+            const { owner, repo } = context.repo;
+            const { repository } = await github.graphql(`
+              query($owner: String!, $repo: String!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequests(states: OPEN, baseRefName: "main", first: 50,
+                               orderBy: { field: CREATED_AT, direction: ASC }) {
+                    nodes {
+                      id number headRefOid
+                      autoMergeRequest { enabledAt }
+                      labels(first: 20) { nodes { name } }
+                      reviews(last: 50) { nodes { author { login } commit { oid } } }
+                    }
+                  }
+                }
+              }`, { owner, repo });
+
+            const setAutoMerge = async (pr, on) => {
+              if (on === Boolean(pr.autoMergeRequest)) return;
+              const mutation = on
+                ? `mutation($id: ID!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: MERGE }) { clientMutationId } }`
+                : `mutation($id: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }`;
+              try {
+                await github.graphql(mutation, { id: pr.id });
+                core.info(`#${pr.number}: auto-merge ${on ? 'enabled' : 'disabled'}`);
+              } catch (e) {
+                core.warning(`#${pr.number}: could not ${on ? 'enable' : 'disable'} auto-merge: ${e.message}`);
+              }
+            };
+
+            let blocked = false;
+            for (const pr of repository.pullRequests.nodes) {
+              if (blocked) {
+                await setAutoMerge(pr, false);
+                continue;
+              }
+              const labelled = pr.labels.nodes.some((l) => l.name === 'automerge');
+              const reviewed = pr.reviews.nodes.some(
+                (r) => r.author?.login === 'copilot-pull-request-reviewer' && r.commit?.oid === pr.headRefOid
+              );
+              blocked = true;
+              if (!labelled || !reviewed) {
+                core.info(`#${pr.number} is next in line but not ready (label: ${labelled}, Copilot review of head: ${reviewed})`);
+                await setAutoMerge(pr, false);
+                continue;
+              }
+              // Auto-merge cannot be enabled on a PR that is already mergeable,
+              // so try merging first and fall back to arming auto-merge.
+              try {
+                await github.rest.pulls.merge({ owner, repo, pull_number: pr.number, merge_method: 'merge', sha: pr.headRefOid });
+                core.info(`#${pr.number}: merged`);
+                blocked = false;
+              } catch (e) {
+                core.info(`#${pr.number}: not mergeable yet (${e.message})`);
+                await setAutoMerge(pr, true);
+              }
+            }
