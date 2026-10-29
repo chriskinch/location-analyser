@@ -5,7 +5,7 @@ A web application for analyzing workplace visits from Google Timeline/Takeout da
 ## Features
 
 - **Timeline Data Analysis**: Process Google Timeline/Takeout JSON data to identify location visits
-- **UK Working Days**: Automatically exclude weekends and UK bank holidays (2012-2027)
+- **UK Working Days**: Automatically exclude weekends and UK bank holidays (2012-2028)
 - **Interactive Calendar**: 
   - Click to exclude/include working days
   - Double-click to manually mark days as visited
