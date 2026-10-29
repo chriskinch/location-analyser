@@ -91,6 +91,20 @@ describe('CalendarRenderer.formatDateToYYYYMMDD', () => {
     });
 });
 
+describe('CalendarRenderer.goToToday', () => {
+    it('returns the calendar to the current month', () => {
+        document.body.innerHTML = '<div id="cal"></div>';
+        const renderer = new CalendarRenderer('cal', null);
+        renderer.changeMonth(-3);
+        renderer.goToToday();
+        const now = new Date();
+        expect(renderer.currentMonth.getFullYear()).toBe(now.getFullYear());
+        expect(renderer.currentMonth.getMonth()).toBe(now.getMonth());
+        expect(document.querySelector('.calendar-header h3')!.textContent)
+            .toBe(now.toLocaleString('default', { month: 'long', year: 'numeric' }));
+    });
+});
+
 describe('DateRangePicker.formatDateForInput', () => {
     let picker: DateRangePicker;
 
@@ -128,6 +142,7 @@ describe('timeline file upload handler', () => {
         <button id="analyzeButton">Analyze</button>
         <button id="last90DaysButton">Last 90 Days</button>
         <pre id="results"></pre>
+        <button id="todayButton">Today</button>
         <div id="calendarContainer"></div>
     `;
 
