@@ -1,0 +1,94 @@
+name: Auto Merge
+
+on:
+  # pull_request_target sources this workflow from the base branch, so a PR
+  # cannot change how it gets merged. Safe here: no PR code is checked out.
+  pull_request_target:
+    types: [opened, reopened, closed, synchronize, labeled, unlabeled]
+  # The schedule covers what the events above miss: Copilot reviews
+  # (pull_request_review would run PR-supplied workflow code with write
+  # access) and merges made with GITHUB_TOKEN, which trigger no further runs.
+  # Trade-off: up to 15 min lag after a review or merge. Triggering runs with
+  # an app token instead of GITHUB_TOKEN would remove it.
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge
+
+jobs:
+  arm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Arm auto-merge on the oldest ready PR
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            // PRs merge in creation order (CLAUDE.md). Only the oldest open
+            // PR against main may merge, and only once it carries the
+            // `automerge` label and Copilot has reviewed its latest commit.
+            // The "Merge to main" ruleset then holds the merge until the
+            // required checks pass and every review thread is resolved.
+            // Every later PR has auto-merge switched off so it cannot jump
+            // the queue.
+            const { owner, repo } = context.repo;
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, base: 'main', state: 'open', sort: 'created', direction: 'asc', per_page: 100,
+            });
+
+            const disable = async (pr) => {
+              if (!pr.auto_merge) return;
+              await github.graphql(
+                `mutation($id: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }`,
+                { id: pr.node_id });
+              core.info(`#${pr.number}: auto-merge disabled`);
+            };
+
+            // Disarm every newer PR before touching the oldest, so GitHub cannot
+            // auto-merge one out of order meanwhile. A failed disable throws and
+            // fails the run rather than leaving the queue unguarded.
+            const [head, ...rest] = prs;
+            for (const pr of rest) await disable(pr);
+            if (!head) return;
+
+            const labelled = head.labels.some((l) => l.name === 'automerge');
+            const reviews = labelled
+              ? await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: head.number, per_page: 100 })
+              : [];
+            const reviewed = reviews.some(
+              (r) => r.user?.login === 'copilot-pull-request-reviewer[bot]' && r.commit_id === head.head.sha
+            );
+            if (!labelled || !reviewed) {
+              core.info(`#${head.number} is next in line but not ready (label: ${labelled}, Copilot review of head: ${reviewed})`);
+              await disable(head);
+              return;
+            }
+
+            // Auto-merge cannot be enabled on a PR that is already mergeable,
+            // so try merging first and fall back to arming auto-merge. The next
+            // PR in line is handled by the next run.
+            try {
+              await github.rest.pulls.merge({ owner, repo, pull_number: head.number, merge_method: 'merge', sha: head.head.sha });
+              core.info(`#${head.number}: merged`);
+              return;
+            } catch (e) {
+              core.info(`#${head.number}: not mergeable yet (${e.message})`);
+            }
+            if (head.auto_merge?.merge_method === 'merge') return;
+            try {
+              // Clears a squash/rebase request before re-arming it as a merge commit.
+              await disable(head);
+              // expectedHeadOid refuses to arm a head pushed after the review check.
+              // A later push re-runs this workflow (synchronize), which disarms it.
+              await github.graphql(
+                `mutation($id: ID!, $oid: GitObjectID!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: MERGE, expectedHeadOid: $oid }) { clientMutationId } }`,
+                { id: head.node_id, oid: head.head.sha });
+              core.info(`#${head.number}: auto-merge enabled`);
+            } catch (e) {
+              core.warning(`#${head.number}: could not enable auto-merge: ${e.message}`);
+            }
