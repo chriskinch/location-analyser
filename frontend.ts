@@ -515,6 +515,12 @@ class CalendarRenderer {
         this.currentMonth.setMonth(this.currentMonth.getMonth() + offset);
         this.render(); // Re-render the calendar for the new month
     }
+
+    // Jumps the calendar back to the current month.
+    goToToday() {
+        this.currentMonth = new Date();
+        this.render();
+    }
 }
 
 
@@ -609,6 +615,9 @@ Average: ${data.averageVisitsPerWorkingWeek}
 
     // Add an event listener to the "Analyze Visits" button.
     analyzeButton.addEventListener('click', runAnalysis); // Direct call for button click
+
+    // Add an event listener to the "Today" button next to the calendar title.
+    document.getElementById('todayButton')!.addEventListener('click', () => calendar.goToToday());
 
     // Add an event listener to the "Last 90 Days" button.
     const last90DaysButton = document.getElementById('last90DaysButton')!;
