@@ -98,7 +98,12 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
     });
 
     const frontendExcludedDates = excludedDates ? new Set(JSON.parse(excludedDates)) : new Set();
-    const frontendManualVisitedDates = manualVisitedDates ? new Set(JSON.parse(manualVisitedDates)) : new Set();
+    // Manual visits are stored for all time; only count those inside the analysed range.
+    const startDay = formatDateToYYYYMMDD(startDatetime);
+    const endDay = formatDateToYYYYMMDD(endDatetime);
+    const frontendManualVisitedDates = new Set(
+        (manualVisitedDates ? JSON.parse(manualVisitedDates) : []).filter(d => d >= startDay && d <= endDay)
+    );
 
     const combinedVisitedDays = new Set([...uniqueVisitDaysFromTimeline, ...frontendManualVisitedDates]);
     const countVisitsInRange = combinedVisitedDays.size;
