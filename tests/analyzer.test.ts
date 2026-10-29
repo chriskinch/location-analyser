@@ -279,17 +279,17 @@ describe('analyzeTimelineData', () => {
 });
 
 describe('analyzeTimelineData edge cases', () => {
-    let dir;
+    let dir: string;
     beforeAll(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'analyzer-test-')); });
     afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
     let n = 0;
-    function writeTimeline(data) {
+    function writeTimeline(data: unknown) {
         const file = path.join(dir, `timeline-${n++}.json`);
         fs.writeFileSync(file, typeof data === 'string' ? data : JSON.stringify(data));
         return file;
     }
-    const visit = (startTime, endTime, placeId = 'test-place-id') =>
+    const visit = (startTime: string, endTime: string, placeId = 'test-place-id') =>
         ({ startTime, endTime, visit: { topCandidate: { placeId } } });
 
     it('counts a visit that spans midnight on its start day only', async () => {
