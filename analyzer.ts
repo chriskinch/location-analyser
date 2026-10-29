@@ -1,5 +1,6 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import type { AnalysisResult, TimelineData } from './types';
 
 const UK_BANK_HOLIDAYS = new Set([
     // 2012
@@ -36,16 +37,24 @@ const UK_BANK_HOLIDAYS = new Set([
     '2027-01-01', '2027-03-26', '2027-03-29', '2027-05-03', '2027-05-31', '2027-08-30', '2027-12-27', '2027-12-28'
 ]);
 
-function formatDateToYYYYMMDD(date) {
+function formatDateToYYYYMMDD(date: Date): string {
     const year = date.getUTCFullYear();
     const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
     const day = date.getUTCDate().toString().padStart(2, '0');
     return `${year}-${month}-${day}`;
 }
 
-async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, manualVisitedDates, dataFilePath) {
-    const filePath = dataFilePath || path.join(__dirname, 'timeline.json');
-    let rawData;
+async function analyzeTimelineData(
+    placeId: string,
+    startDate: string,
+    endDate: string,
+    excludedDates?: string | null,
+    manualVisitedDates?: string | null,
+    dataFilePath?: string
+): Promise<AnalysisResult> {
+    // Compiled to dist/; the data file lives at the repo root.
+    const filePath = dataFilePath || path.join(__dirname, '..', 'timeline.json');
+    let rawData: string;
     try {
         rawData = await fs.promises.readFile(filePath, 'utf8');
     } catch (error) {
@@ -53,8 +62,8 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
         throw new Error("Failed to read timeline data. Make sure 'timeline.json' is in the same directory.");
     }
 
-    const data = JSON.parse(rawData);
-    const visits = [];
+    const data: TimelineData = JSON.parse(rawData);
+    const visits: { placeId: string | undefined; startTimestamp: string; endTimestamp: string }[] = [];
 
     if (data.semanticSegments && Array.isArray(data.semanticSegments)) {
         for (const segment of data.semanticSegments) {
@@ -81,7 +90,7 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
         throw new Error("Invalid start or end date format provided from frontend. Please use ISO 8601 format (e.g., 'YYYY-MM-DDTHH:mm:ss.sssZ').");
     }
 
-    const uniqueVisitDaysFromTimeline = new Set();
+    const uniqueVisitDaysFromTimeline = new Set<string>();
     visits.filter(visit => {
         if (!visit.placeId || visit.placeId !== placeId) {
             return false;
@@ -97,18 +106,18 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
         uniqueVisitDaysFromTimeline.add(formatDateToYYYYMMDD(new Date(visit.startTimestamp)));
     });
 
-    const frontendExcludedDates = excludedDates ? new Set(JSON.parse(excludedDates)) : new Set();
+    const frontendExcludedDates = excludedDates ? new Set<string>(JSON.parse(excludedDates)) : new Set<string>();
     // Manual visits are stored for all time; only count those inside the analysed range.
     const startDay = formatDateToYYYYMMDD(startDatetime);
     const endDay = formatDateToYYYYMMDD(endDatetime);
-    const frontendManualVisitedDates = new Set(
-        (manualVisitedDates ? JSON.parse(manualVisitedDates) : []).filter(d => d >= startDay && d <= endDay)
+    const frontendManualVisitedDates = new Set<string>(
+        (manualVisitedDates ? JSON.parse(manualVisitedDates) as string[] : []).filter(d => d >= startDay && d <= endDay)
     );
 
     const combinedVisitedDays = new Set([...uniqueVisitDaysFromTimeline, ...frontendManualVisitedDates]);
     const countVisitsInRange = combinedVisitedDays.size;
 
-    const eligibleWorkingDates = [];
+    const eligibleWorkingDates: string[] = [];
     let totalEligibleWorkingDays = 0;
     let currentDate = new Date(startDatetime);
     currentDate.setUTCHours(0, 0, 0, 0);
@@ -142,4 +151,4 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
     };
 }
 
-module.exports = { UK_BANK_HOLIDAYS, formatDateToYYYYMMDD, analyzeTimelineData };
+export { UK_BANK_HOLIDAYS, formatDateToYYYYMMDD, analyzeTimelineData };

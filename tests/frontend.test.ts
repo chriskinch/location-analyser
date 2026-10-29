@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
-// Import the utilities exported by frontend.js
-// The module.exports guard in frontend.js makes these available in Node/Vitest.
-// The DOMContentLoaded callback at the bottom of frontend.js will not fire
+// Import the utilities exported by frontend.ts.
+// The DOMContentLoaded callback at the bottom of frontend.ts will not fire
 // automatically during import since jsdom's document is already parsed.
-import { debounce, CalendarRenderer, DateRangePicker } from '../frontend.js';
+import { debounce, CalendarRenderer, DateRangePicker } from '../frontend';
 
 describe('debounce', () => {
     beforeEach(() => {
@@ -66,7 +65,7 @@ describe('debounce', () => {
 });
 
 describe('CalendarRenderer.formatDateToYYYYMMDD', () => {
-    let renderer;
+    let renderer: CalendarRenderer;
 
     beforeEach(() => {
         // CalendarRenderer constructor calls document.getElementById and then render(),
@@ -93,12 +92,12 @@ describe('CalendarRenderer.formatDateToYYYYMMDD', () => {
 });
 
 describe('DateRangePicker.formatDateForInput', () => {
-    let picker;
+    let picker: DateRangePicker;
 
     beforeEach(() => {
         // DateRangePicker constructor creates shadow DOM with input elements
         document.body.innerHTML = '<date-range-picker id="picker"></date-range-picker>';
-        picker = document.getElementById('picker');
+        picker = document.getElementById('picker') as DateRangePicker;
     });
 
     it('formats a standard date', () => {
@@ -132,7 +131,7 @@ describe('timeline file upload handler', () => {
         <div id="calendarContainer"></div>
     `;
 
-    let fetchMock;
+    let fetchMock: Mock;
 
     beforeEach(() => {
         localStorage.clear();
@@ -150,11 +149,11 @@ describe('timeline file upload handler', () => {
         vi.unstubAllGlobals();
     });
 
-    function triggerFileChange(content) {
+    function triggerFileChange(content: string) {
         const file = new File([content], 'Timeline.json', { type: 'application/json' });
         // jsdom doesn't implement Blob.prototype.text(); stub it directly.
         file.text = () => Promise.resolve(content);
-        const input = document.getElementById('timelineFileInput');
+        const input = document.getElementById('timelineFileInput')!;
         Object.defineProperty(input, 'files', { value: [file], configurable: true });
         input.dispatchEvent(new Event('change'));
     }
@@ -168,7 +167,7 @@ describe('timeline file upload handler', () => {
         triggerFileChange(JSON.stringify({ semanticSegments: [] }));
         await new Promise(r => setTimeout(r, 0));
 
-        const status = document.getElementById('uploadStatus');
+        const status = document.getElementById('uploadStatus')!;
         expect(status.textContent).toContain('1,234 segments loaded');
         expect(status.style.color).toBe('rgb(46, 125, 50)'); // #2e7d32
     });
@@ -182,7 +181,7 @@ describe('timeline file upload handler', () => {
         triggerFileChange('{"notValid":true}');
         await new Promise(r => setTimeout(r, 0));
 
-        const status = document.getElementById('uploadStatus');
+        const status = document.getElementById('uploadStatus')!;
         expect(status.textContent).toContain('File must contain a semanticSegments array');
         expect(status.style.color).toBe('rgb(198, 40, 40)'); // #c62828
     });

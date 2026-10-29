@@ -1,0 +1,11 @@
+{
+    // Browser build: emits dist/frontend.js as an ES module (index.html loads it with type="module").
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "noEmit": false,
+        "module": "ES2022",
+        "types": []
+    },
+    "include": [],
+    "files": ["frontend.ts"]
+}

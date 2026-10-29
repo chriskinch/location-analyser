@@ -2,17 +2,21 @@
   "name": "takeout",
   "version": "1.0.0",
   "description": "",
-  "main": "app.js",
+  "main": "dist/app.js",
   "scripts": {
-    "start": "node app.js",
-    "test": "vitest run",
+    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.frontend.json",
+    "start": "npm run build && node dist/app.js",
+    "typecheck": "tsc",
+    "test": "tsc && vitest run",
     "test:watch": "vitest"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "http-server": "^14.1.1",
     "jsdom": "^25.0.0",
+    "typescript": "^5.9.3",
     "vitest": "^2.0.0"
   },
   "engines": {

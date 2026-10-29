@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { formatDateToYYYYMMDD, analyzeTimelineData, UK_BANK_HOLIDAYS } from '../analyzer.js';
+import { formatDateToYYYYMMDD, analyzeTimelineData, UK_BANK_HOLIDAYS } from '../analyzer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

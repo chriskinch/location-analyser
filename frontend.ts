@@ -1,6 +1,13 @@
+import type { AnalysisResult, ErrorResponse, UploadResult } from './types';
+
 // --- Custom Web Component: DateRangePicker ---
 // This component provides a reusable date and time input pair for start and end dates.
 class DateRangePicker extends HTMLElement {
+    startDateInput: HTMLInputElement;
+    startTimeInput: HTMLInputElement;
+    endDateInput: HTMLInputElement;
+    endTimeInput: HTMLInputElement;
+
     constructor() {
         super();
         // Attach a Shadow DOM to encapsulate the component's internal structure and styles.
@@ -68,14 +75,14 @@ class DateRangePicker extends HTMLElement {
         shadow.appendChild(endDateDiv);
 
         // Store references to the input elements for easy access.
-        this.startDateInput = shadow.getElementById('startDate');
-        this.startTimeInput = shadow.getElementById('startTime');
-        this.endDateInput = shadow.getElementById('endDate');
-        this.endTimeInput = shadow.getElementById('endTime');
+        this.startDateInput = shadow.getElementById('startDate') as HTMLInputElement;
+        this.startTimeInput = shadow.getElementById('startTime') as HTMLInputElement;
+        this.endDateInput = shadow.getElementById('endDate') as HTMLInputElement;
+        this.endTimeInput = shadow.getElementById('endTime') as HTMLInputElement;
     }
 
     // Helper function to format a Date object into 'YYYY-MM-DD' string for input type="date".
-    formatDateForInput(date) {
+    formatDateForInput(date: Date): string {
         const year = date.getFullYear();
         const month = (date.getMonth() + 1).toString().padStart(2, '0'); // Month is 0-indexed
         const day = date.getDate().toString().padStart(2, '0');
@@ -84,7 +91,7 @@ class DateRangePicker extends HTMLElement {
 
     // Method to get the combined start datetime as an ISO string (UTC).
     // This format is suitable for passing to the Node.js backend.
-    getStartDatetimeISO() {
+    getStartDatetimeISO(): string | null {
         const datePart = this.startDateInput.value;
         const timePart = this.startTimeInput.value;
         if (!datePart || !timePart) return null;
@@ -94,7 +101,7 @@ class DateRangePicker extends HTMLElement {
 
     // Method to get the combined end datetime as an ISO string (UTC).
     // This format is suitable for passing to the Node.js backend.
-    getEndDatetimeISO() {
+    getEndDatetimeISO(): string | null {
         const datePart = this.endDateInput.value;
         const timePart = this.endTimeInput.value;
         if (!datePart || !timePart) return null;
@@ -141,7 +148,7 @@ class DateRangePicker extends HTMLElement {
     }
 
     // Method to set dates programmatically (e.g., for "Last 90 Days" button)
-    setDateRange(startDate, endDate, startTime = '00:00', endTime = '23:59') {
+    setDateRange(startDate: Date, endDate: Date, startTime = '00:00', endTime = '23:59') {
         this.startDateInput.value = this.formatDateForInput(startDate);
         this.startTimeInput.value = startTime;
         this.endDateInput.value = this.formatDateForInput(endDate);
@@ -196,9 +203,9 @@ const UK_BANK_HOLIDAYS_FRONTEND = new Set([
 // This function returns a new function that, when called, will delay the execution
 // of the original function until after a specified wait time has passed without
 // any further invocations. Useful for preventing too many calls to an expensive function.
-function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
+function debounce<A extends unknown[]>(func: (...args: A) => unknown, wait: number) {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    return function(this: unknown, ...args: A) {
         const context = this;
         clearTimeout(timeout);
         timeout = setTimeout(() => func.apply(context, args), wait);
@@ -209,16 +216,27 @@ function debounce(func, wait) {
 // --- Calendar Renderer ---
 // This class handles rendering a monthly paginated calendar and highlighting specific dates.
 class CalendarRenderer {
-    constructor(containerId, onAnalysisRefreshCallback) { // Renamed callback for clarity
-        this.container = document.getElementById(containerId);
+    container: HTMLElement;
+    onAnalysisRefreshCallback: (() => void) | null;
+    currentMonth: Date;
+    visitedDates: Set<string>;
+    eligibleWorkingDates: Set<string>;
+    analysisStartDate: Date | null;
+    analysisEndDate: Date | null;
+    excludedDates: Set<string>;
+    manualVisitedDates: Set<string>;
+    clickTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    constructor(containerId: string, onAnalysisRefreshCallback: (() => void) | null) { // Renamed callback for clarity
+        this.container = document.getElementById(containerId)!;
         this.onAnalysisRefreshCallback = onAnalysisRefreshCallback; // Store the callback
         this.currentMonth = new Date(); // Start with the current month for display
-        this.visitedDates = new Set(); // Stores 'YYYY-MM-DD' strings of visited days (from backend)
-        this.eligibleWorkingDates = new Set(); // Stores 'YYYY-MM-DD' strings of eligible working days (from backend)
+        this.visitedDates = new Set<string>(); // Stores 'YYYY-MM-DD' strings of visited days (from backend)
+        this.eligibleWorkingDates = new Set<string>(); // Stores 'YYYY-MM-DD' strings of eligible working days (from backend)
         this.analysisStartDate = null; // To store the analysis period start date
         this.analysisEndDate = null; // To store the analysis period end date
-        this.excludedDates = new Set(); // Store dates manually excluded by user (from eligible working days)
-        this.manualVisitedDates = new Set(); // NEW: Store dates manually marked as visited by user
+        this.excludedDates = new Set<string>(); // Store dates manually excluded by user (from eligible working days)
+        this.manualVisitedDates = new Set<string>(); // NEW: Store dates manually marked as visited by user
 
         // Load excluded and manual visited dates from local storage on initialization
         const savedExcludedDates = localStorage.getItem('excludedDates');
@@ -234,7 +252,7 @@ class CalendarRenderer {
     }
 
     // Method to update the calendar with new data from the backend.
-    setDates(visitedDatesArray, eligibleWorkingDatesArray, analysisStartDateISO, analysisEndDateISO) {
+    setDates(visitedDatesArray: string[], eligibleWorkingDatesArray: string[], analysisStartDateISO: string, analysisEndDateISO: string) {
         this.visitedDates = new Set(visitedDatesArray);
         this.eligibleWorkingDates = new Set(eligibleWorkingDatesArray);
         this.analysisStartDate = new Date(analysisStartDateISO);
@@ -247,7 +265,7 @@ class CalendarRenderer {
     }
 
     // Helper to format a Date object to 'YYYY-MM-DD' string for set lookups.
-    formatDateToYYYYMMDD(date) {
+    formatDateToYYYYMMDD(date: Date): string {
         const year = date.getFullYear();
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
         const day = date.getDate().toString().padStart(2, '0');
@@ -269,8 +287,8 @@ class CalendarRenderer {
         this.container.appendChild(header);
 
         // Add event listeners for month navigation.
-        header.querySelector('#prevMonth').addEventListener('click', () => this.changeMonth(-1));
-        header.querySelector('#nextMonth').addEventListener('click', () => this.changeMonth(1));
+        header.querySelector('#prevMonth')!.addEventListener('click', () => this.changeMonth(-1));
+        header.querySelector('#nextMonth')!.addEventListener('click', () => this.changeMonth(1));
 
         // Create the grid for days of the week and dates.
         const grid = document.createElement('div');
@@ -308,7 +326,7 @@ class CalendarRenderer {
 
             const dayNumber = document.createElement('div');
             dayNumber.className = 'day-number';
-            dayNumber.textContent = day;
+            dayNumber.textContent = String(day);
             dayElement.appendChild(dayNumber);
 
             const dateString = this.formatDateToYYYYMMDD(date);
@@ -407,7 +425,7 @@ class CalendarRenderer {
     }
 
     // Toggle exclusion state for a day (from eligible working days)
-    toggleExcludeDay(dateString, dayElement) {
+    toggleExcludeDay(dateString: string, dayElement: HTMLElement) {
         // If the day is currently manually visited, remove it from manual visited list first
         if (this.manualVisitedDates.has(dateString)) {
             this.manualVisitedDates.delete(dateString);
@@ -445,7 +463,7 @@ class CalendarRenderer {
     }
 
     // Toggle manual visited state for a day
-    toggleManualVisitedDay(dateString, dayElement) {
+    toggleManualVisitedDay(dateString: string, dayElement: HTMLElement) {
         // If the day is currently excluded, remove it from excluded list first
         if (this.excludedDates.has(dateString)) {
             this.excludedDates.delete(dateString);
@@ -491,7 +509,7 @@ class CalendarRenderer {
     }
 
     // Changes the displayed month by the given offset (-1 for previous, 1 for next).
-    changeMonth(offset) {
+    changeMonth(offset: number) {
         this.currentMonth.setMonth(this.currentMonth.getMonth() + offset);
         this.render(); // Re-render the calendar for the new month
     }
@@ -502,11 +520,11 @@ class CalendarRenderer {
 // This section handles the interaction between the HTML elements and your server.
 document.addEventListener('DOMContentLoaded', () => {
     // Get references to the HTML elements.
-    const placeIdInput = document.getElementById('placeIdInput');
-    const datePicker = document.getElementById('datePicker'); // Reference to your custom component
-    const analyzeButton = document.getElementById('analyzeButton');
-    const resultsPre = document.getElementById('results');
-    const calendarContainer = document.getElementById('calendarContainer');
+    const placeIdInput = document.getElementById('placeIdInput') as HTMLInputElement;
+    const datePicker = document.getElementById('datePicker') as DateRangePicker; // Reference to your custom component
+    const analyzeButton = document.getElementById('analyzeButton')!;
+    const resultsPre = document.getElementById('results')!;
+    const calendarContainer = document.getElementById('calendarContainer')!;
 
     // Function to run the analysis, now reusable
     const runAnalysis = async () => {
@@ -538,7 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Make a fetch request to your Node.js server.
             const response = await fetch(apiUrl);
             // Parse the JSON response from the server.
-            const data = await response.json();
+            const data: AnalysisResult & Partial<ErrorResponse> = await response.json();
 
             // Check if the HTTP response was successful (status code 2xx).
             if (response.ok) {
@@ -562,7 +580,7 @@ Average: ${data.averageVisitsPerWorkingWeek}
         } catch (error) {
             // Catch network errors or issues with fetch itself.
             console.error('Error fetching data:', error);
-            resultsPre.textContent = `Failed to connect to the server or an unexpected error occurred: ${error.message}`;
+            resultsPre.textContent = `Failed to connect to the server or an unexpected error occurred: ${(error as Error).message}`;
             calendarContainer.innerHTML = `<p style="text-align: center; color: red;">Failed to connect to server.</p>`;
         }
     };
@@ -591,7 +609,7 @@ Average: ${data.averageVisitsPerWorkingWeek}
     analyzeButton.addEventListener('click', runAnalysis); // Direct call for button click
 
     // Add an event listener to the "Last 90 Days" button.
-    const last90DaysButton = document.getElementById('last90DaysButton');
+    const last90DaysButton = document.getElementById('last90DaysButton')!;
     last90DaysButton.addEventListener('click', () => {
         const today = new Date();
         const startDate90DaysAgo = new Date();
@@ -602,11 +620,11 @@ Average: ${data.averageVisitsPerWorkingWeek}
     });
 
     // Timeline file upload handler
-    const timelineFileInput = document.getElementById('timelineFileInput');
+    const timelineFileInput = document.getElementById('timelineFileInput') as HTMLInputElement | null;
     const uploadStatus = document.getElementById('uploadStatus');
     if (timelineFileInput && uploadStatus) {
         timelineFileInput.addEventListener('change', async () => {
-            const file = timelineFileInput.files[0];
+            const file = timelineFileInput.files![0];
             if (!file) return;
             uploadStatus.textContent = 'Uploading…';
             uploadStatus.style.color = '#555';
@@ -617,7 +635,7 @@ Average: ${data.averageVisitsPerWorkingWeek}
                     headers: { 'Content-Type': 'application/json' },
                     body: text
                 });
-                const result = await response.json();
+                const result: UploadResult & Partial<ErrorResponse> = await response.json();
                 if (response.ok) {
                     uploadStatus.textContent = `Uploaded — ${result.segments.toLocaleString()} segments loaded.`;
                     uploadStatus.style.color = '#2e7d32';
@@ -627,7 +645,7 @@ Average: ${data.averageVisitsPerWorkingWeek}
                     uploadStatus.style.color = '#c62828';
                 }
             } catch (err) {
-                uploadStatus.textContent = `Upload error: ${err.message}`;
+                uploadStatus.textContent = `Upload error: ${(err as Error).message}`;
                 uploadStatus.style.color = '#c62828';
             }
             timelineFileInput.value = '';
@@ -638,7 +656,5 @@ Average: ${data.averageVisitsPerWorkingWeek}
     runAnalysis();
 });
 
-// Export utilities for unit testing (guard prevents this from running in the browser)
-if (typeof module !== 'undefined') {
-    module.exports = { debounce, CalendarRenderer, DateRangePicker };
-}
+// Export utilities for unit testing (index.html loads this file as an ES module, so this is harmless in the browser)
+export { debounce, CalendarRenderer, DateRangePicker };
