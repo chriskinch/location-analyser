@@ -44,7 +44,7 @@ Timeline JSON contains `semanticSegments` array with:
 
 ### Key Features
 
-1. **UK Bank Holiday Handling:** Hardcoded UK bank holidays (2012-2027) excluded from working day calculations
+1. **UK Bank Holiday Handling:** Hardcoded UK bank holidays (2012-2028) excluded from working day calculations
 2. **Interactive Calendar:** Visual representation with click/double-click interactions for manual adjustments
 3. **Local Storage Persistence:** User preferences saved (dates, placeId, exclusions, manual visits)
 4. **Real-time Analysis:** Automatic recalculation when calendar interactions occur
