@@ -71,12 +71,24 @@ describe('static file allowlist', () => {
         expect(await res.text()).toBe(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'));
     });
 
-    it.each(['/app.js', '/analyzer.js', '/timeline.json', '/package.json', '/nope', '/%2e%2e/app.js'])(
+    it.each(['/app.js', '/analyzer.js', '/timeline.json', '/package.json', '/nope'])(
         'returns 404 for non-allowlisted path %s',
         async p => {
             const res = await fetch(`${srv.base}${p}`);
             expect(res.status).toBe(404);
             expect(await res.text()).toBe('404 Not Found');
+        }
+    );
+
+    // fetch normalizes dot segments, so send these raw with http.get.
+    it.each(['/../app.js', '/%2e%2e/app.js', '/..%2fapp.js'])(
+        'returns 404 for traversal path %s',
+        async p => {
+            const status = await new Promise((resolve, reject) => {
+                http.get(`${srv.base}/`, { path: p }, res => { res.resume(); resolve(res.statusCode); })
+                    .on('error', reject);
+            });
+            expect(status).toBe(404);
         }
     );
 

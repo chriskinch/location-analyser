@@ -305,11 +305,20 @@ describe('analyzeTimelineData edge cases', () => {
         // as 14 June. CalendarRenderer formats dates in local time, so a late-night
         // BST visit can land on a different day than the user expects. This test
         // pins current behaviour; see PR description.
-        const file = writeTimeline({ semanticSegments: [visit('2024-06-14T23:30:00.000Z', '2024-06-15T01:00:00.000Z')] });
-        const result = await analyzeTimelineData(
-            'test-place-id', '2024-06-10T00:00:00.000Z', '2024-06-16T23:59:59.000Z', null, null, file
-        );
-        expect(result.visitedDates).toEqual(['2024-06-14']);
+        // Run under Europe/London so local-date bucketing would give a different answer.
+        const originalTZ = process.env.TZ;
+        process.env.TZ = 'Europe/London';
+        try {
+            expect(new Date('2024-06-14T23:30:00.000Z').getDate()).toBe(15); // TZ took effect
+            const file = writeTimeline({ semanticSegments: [visit('2024-06-14T23:30:00.000Z', '2024-06-15T01:00:00.000Z')] });
+            const result = await analyzeTimelineData(
+                'test-place-id', '2024-06-10T00:00:00.000Z', '2024-06-16T23:59:59.000Z', null, null, file
+            );
+            expect(result.visitedDates).toEqual(['2024-06-14']);
+        } finally {
+            if (originalTZ === undefined) delete process.env.TZ;
+            else process.env.TZ = originalTZ;
+        }
     });
 
     it('counts several visits on the same day once', async () => {
