@@ -1,0 +1,178 @@
+name: Claude Issues
+
+# Issue opened / new comment -> Claude posts (and keeps updating) a requirements
+# comment with acceptance criteria and open questions.
+# Label "ready" added -> Claude implements on a <type>/<slug> branch, runs the
+# tests and opens a PR that closes the issue.
+#
+# The repo is public, so issue text is untrusted prompt input: only issues and
+# comments from the owner or collaborators are passed to Claude.
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  refine:
+    if: >-
+      !github.event.issue.pull_request &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+      !contains(github.event.issue.labels.*.name, 'ready') &&
+      ((github.event_name == 'issues' && github.event.action == 'opened') ||
+       (github.event_name == 'issue_comment' &&
+        github.event.comment.user.type != 'Bot' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: claude-refine-${{ github.event.issue.number }}
+    # Comments are posted with GITHUB_TOKEN, so they can't re-trigger this workflow.
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE: ${{ github.event.issue.number }}
+      MARKER: "<!-- claude-requirements -->"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Collect trusted issue context
+        run: &collect |
+          ctx="$RUNNER_TEMP/issue-context.md"
+          gh issue view "$ISSUE" --json title,body --jq '"# \(.title)\n\n\(.body)"' > "$ctx"
+          gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/comments" --paginate --jq '.[]
+            | select((.author_association | IN("OWNER","MEMBER","COLLABORATOR"))
+                or (.user.login == "github-actions[bot]" and (.body | startswith(env.MARKER))))
+            | "\n---\n**@\(.user.login)** (\(.created_at)):\n\n\(.body)"' >> "$ctx"
+
+      - name: Draft requirements
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          claude_args: >-
+            --add-dir ${{ runner.temp }}
+            --allowedTools "Read,Glob,Grep,Write"
+          prompt: |
+            You are refining GitHub issue #${{ github.event.issue.number }} in ${{ github.repository }}
+            into implementable requirements. Do not change any code.
+
+            Read ${{ runner.temp }}/issue-context.md: the issue, its comments, and your previous
+            requirements comment (marked `<!-- claude-requirements -->`) if there is one.
+            Explore the codebase as needed so the requirements fit how the app actually works.
+
+            Write the complete, updated requirements as Markdown to
+            ${{ runner.temp }}/requirements.md, replacing any earlier version. Use these sections:
+            - **Summary**: one or two sentences.
+            - **Acceptance criteria**: a checklist of testable statements.
+            - **Out of scope**
+            - **Affected areas**: files or components likely to change.
+            - **Open questions**: numbered, each answerable in a short comment. Fold answers
+              given in comments into the sections above and remove answered questions.
+              If none remain, say "None. Add the `ready` label to start implementation."
+
+            Flag anything that would change the `/analyze` API, localStorage keys or public
+            functions in frontend.js as an open question, because CLAUDE.md requires approval.
+            Do not include any Claude or AI attribution.
+
+      - name: Post or update requirements comment
+        run: |
+          [ -s "$RUNNER_TEMP/requirements.md" ] || { echo "No requirements written"; exit 1; }
+          printf '%s\n\n' "$MARKER" | cat - "$RUNNER_TEMP/requirements.md" > "$RUNNER_TEMP/body.md"
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/comments" --paginate --jq '.[]
+            | select(.user.login == "github-actions[bot]" and (.body | startswith(env.MARKER))) | .id' | tail -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@"$RUNNER_TEMP/body.md" > /dev/null
+          else
+            gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/body.md"
+          fi
+
+  implement:
+    if: >-
+      github.event_name == 'issues' && github.event.action == 'labeled' &&
+      github.event.label.name == 'ready' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: claude-implement-${{ github.event.issue.number }}
+    # Pushes and the PR use the Claude GitHub App token (fetched via OIDC), so the
+    # PR triggers the normal CI. GITHUB_TOKEN itself stays read-only.
+    permissions:
+      contents: read
+      issues: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE: ${{ github.event.issue.number }}
+      MARKER: "<!-- claude-requirements -->"
+      # Commits are authored as the repo owner; the committer stays claude[bot].
+      GIT_AUTHOR_NAME: Chris Kinch
+      GIT_AUTHOR_EMAIL: kinchie@gmail.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Collect trusted issue context
+        run: *collect
+
+      # The workflow picks the branch so it always matches <type>/<slug> and never
+      # starts with claude/. Claude can't switch branches (not in its allowed tools).
+      - name: Create branch
+        env:
+          TITLE: ${{ github.event.issue.title }}
+          LABELS: ${{ join(github.event.issue.labels.*.name, ',') }}
+        run: |
+          case ",$LABELS," in
+            *,bug,*) type=fix ;;
+            *,documentation,*) type=docs ;;
+            *) type=feat ;;
+          esac
+          slug=$(printf '%s' "$TITLE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//' | cut -c1-40 | sed -E 's/-+$//')
+          git switch -c "$type/$ISSUE-${slug:-issue}"
+
+      - name: Implement
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          settings: '{"attribution":{"commit":"","pr":""}}'
+          claude_args: >-
+            --add-dir ${{ runner.temp }}
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(npm test *),Bash(npx vitest *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git add *),Bash(git commit *),Bash(git push -u origin HEAD),Bash(gh pr create *),Bash(gh pr edit *),Bash(gh issue comment *)"
+          prompt: |
+            Implement GitHub issue #${{ github.event.issue.number }} in ${{ github.repository }}.
+
+            Read ${{ runner.temp }}/issue-context.md for the issue and the agreed requirements
+            (the comment marked `<!-- claude-requirements -->`). Follow CLAUDE.md strictly,
+            especially Scope Discipline, Preserve API Contracts and Protect Data Files.
+            If the requirements still have unanswered open questions that block the work,
+            don't guess: comment on the issue with what's missing and stop.
+
+            You are already on the branch for this work; do not create or switch branches.
+            1. Make the smallest change that meets the acceptance criteria. Add or update
+               Vitest tests for new behaviour.
+            2. Run `npm test` and fix failures until it passes.
+            3. Commit in small, focused commits with plain messages. No Co-authored-by
+               trailers or other Claude/AI attribution.
+            4. Push with exactly `git push -u origin HEAD`.
+            5. Open a PR against main with `gh pr create`. The body says what changed and
+               why, notes any decisions you made, and ends with `Closes #${{ github.event.issue.number }}`.
+               It must not contain "Generated by Claude Code" or any Claude/AI attribution.
+            6. Try `gh pr edit <number> --add-reviewer @copilot`; if that fails, carry on.
+            7. Comment on the issue with the PR link, or with what blocked you.
