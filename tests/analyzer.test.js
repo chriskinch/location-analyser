@@ -380,15 +380,14 @@ describe('analyzeTimelineData edge cases', () => {
         expect(result.averageVisitsPerWorkingWeek).toBe(0);
     });
 
-    it('counts manual visited dates outside the range and on weekends', async () => {
-        // Manual dates are not filtered against the range or the working-day rules.
-        // Likely bug: the frontend sends every manual date in localStorage, so a manual
-        // visit from an earlier period inflates this period's count and average.
-        // This test pins current behaviour; see PR description.
-        const manual = JSON.stringify(['2023-01-01', '2024-01-20']);
-        const result = await analyzeTimelineData('test-place-id', WEEK_START, WEEK_END, null, manual, FIXTURE);
-        expect(result.visitedDates).toEqual(['2023-01-01', '2024-01-15', '2024-01-16', '2024-01-20']);
-        expect(result.totalUniqueVisitDays).toBe(4);
+    it('counts a manual visited date on a weekend inside the range', async () => {
+        // Manual dates are range-filtered (see accuracy.test.js) but not working-day filtered.
+        const manual = JSON.stringify(['2024-01-20']); // Saturday
+        const result = await analyzeTimelineData(
+            'test-place-id', WEEK_START, '2024-01-21T23:59:59.000Z', null, manual, FIXTURE
+        );
+        expect(result.visitedDates).toEqual(['2024-01-15', '2024-01-16', '2024-01-20']);
+        expect(result.totalEligibleWorkingDays).toBe(5);
     });
 
     it('rejects with a SyntaxError for malformed excludedDates JSON', async () => {
