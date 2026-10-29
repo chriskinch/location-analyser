@@ -1,5 +1,6 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import type { AnalysisResult, TimelineData } from './types';
 
 const UK_BANK_HOLIDAYS = new Set([
     // 2012
@@ -38,7 +39,7 @@ const UK_BANK_HOLIDAYS = new Set([
     '2028-01-03', '2028-04-14', '2028-04-17', '2028-05-01', '2028-05-29', '2028-08-28', '2028-12-25', '2028-12-26'
 ]);
 
-function formatDateToYYYYMMDD(date) {
+function formatDateToYYYYMMDD(date: Date): string {
     const year = date.getUTCFullYear();
     const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
     const day = date.getUTCDate().toString().padStart(2, '0');
@@ -46,13 +47,21 @@ function formatDateToYYYYMMDD(date) {
 }
 
 // Calendar day (YYYY-MM-DD) in UK local time, so BST instants land on the right UK day.
-function toLondonDay(date) {
+function toLondonDay(date: Date): string {
     return date.toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
 }
 
-async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, manualVisitedDates, dataFilePath) {
-    const filePath = dataFilePath || path.join(__dirname, 'timeline.json');
-    let rawData;
+async function analyzeTimelineData(
+    placeId: string,
+    startDate: string,
+    endDate: string,
+    excludedDates?: string | null,
+    manualVisitedDates?: string | null,
+    dataFilePath?: string
+): Promise<AnalysisResult> {
+    // Compiled to dist/; the data file lives at the repo root.
+    const filePath = dataFilePath || path.join(__dirname, '..', 'timeline.json');
+    let rawData: string;
     try {
         rawData = await fs.promises.readFile(filePath, 'utf8');
     } catch (error) {
@@ -60,8 +69,8 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
         throw new Error("Failed to read timeline data. Make sure 'timeline.json' is in the same directory.");
     }
 
-    const data = JSON.parse(rawData);
-    const visits = [];
+    const data: TimelineData = JSON.parse(rawData);
+    const visits: { placeId: string | undefined; startTimestamp: string; endTimestamp: string }[] = [];
 
     if (data.semanticSegments && Array.isArray(data.semanticSegments)) {
         for (const segment of data.semanticSegments) {
@@ -88,7 +97,7 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
         throw new Error("Invalid start or end date format provided from frontend. Please use ISO 8601 format (e.g., 'YYYY-MM-DDTHH:mm:ss.sssZ').");
     }
 
-    const uniqueVisitDaysFromTimeline = new Set();
+    const uniqueVisitDaysFromTimeline = new Set<string>();
     visits.filter(visit => {
         if (!visit.placeId || visit.placeId !== placeId) {
             return false;
@@ -104,18 +113,18 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
         uniqueVisitDaysFromTimeline.add(toLondonDay(new Date(visit.startTimestamp)));
     });
 
-    const frontendExcludedDates = excludedDates ? new Set(JSON.parse(excludedDates)) : new Set();
+    const frontendExcludedDates = excludedDates ? new Set<string>(JSON.parse(excludedDates)) : new Set<string>();
     // Manual visits are stored for all time; only count those inside the analysed range.
     const startDay = toLondonDay(startDatetime);
     const endDay = toLondonDay(endDatetime);
-    const frontendManualVisitedDates = new Set(
-        (manualVisitedDates ? JSON.parse(manualVisitedDates) : []).filter(d => d >= startDay && d <= endDay)
+    const frontendManualVisitedDates = new Set<string>(
+        (manualVisitedDates ? JSON.parse(manualVisitedDates) as string[] : []).filter(d => d >= startDay && d <= endDay)
     );
 
     const combinedVisitedDays = new Set([...uniqueVisitDaysFromTimeline, ...frontendManualVisitedDates]);
     const countVisitsInRange = combinedVisitedDays.size;
 
-    const eligibleWorkingDates = [];
+    const eligibleWorkingDates: string[] = [];
     let totalEligibleWorkingDays = 0;
     let currentDate = new Date(`${startDay}T00:00:00.000Z`);
     const lastDate = new Date(`${endDay}T00:00:00.000Z`);
@@ -149,4 +158,4 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
     };
 }
 
-module.exports = { UK_BANK_HOLIDAYS, formatDateToYYYYMMDD, analyzeTimelineData };
+export { UK_BANK_HOLIDAYS, formatDateToYYYYMMDD, analyzeTimelineData };

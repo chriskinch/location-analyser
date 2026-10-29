@@ -2,13 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { analyzeTimelineData } from '../analyzer.js';
+import { analyzeTimelineData } from '../analyzer';
 
 const PLACE = 'OFFICE';
-let dir;
-let file;
+let dir: string;
+let file: string;
 
-const visit = startTime => ({ startTime, endTime: startTime, visit: { topCandidate: { placeId: PLACE } } });
+const visit = (startTime: string) => ({ startTime, endTime: startTime, visit: { topCandidate: { placeId: PLACE } } });
 
 beforeAll(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'accuracy-'));
@@ -32,7 +32,7 @@ describe('manual visited dates', () => {
 });
 
 // What the browser sends for a UK-local date range during BST (local midnight = 23:00 UTC the day before).
-const bst = (date, time) => new Date(`${date}T${time}:00+01:00`).toISOString();
+const bst = (date: string, time: string) => new Date(`${date}T${time}:00+01:00`).toISOString();
 
 describe('UK local day boundaries', () => {
     it('does not count the day before a BST start date as a working day', async () => {

@@ -38,9 +38,9 @@ npm install
    - Open **Google Maps** → your profile picture → **Settings** → **Location** → **Google Location History** → **Export**
    - This downloads a `Timeline.json` file to your device; transfer it to your computer
 
-4. Start the server:
+4. Build and start the server:
 ```bash
-node app.js
+npm start
 ```
 
 5. Open your browser to http://127.0.0.1:3000/ and upload your `Timeline.json` via the **Upload Timeline Data** section at the top of the page
@@ -102,7 +102,8 @@ Analyzes timeline data for a specific location and date range.
 ## Architecture
 
 - **Backend**: Node.js HTTP server with timeline data processing
-- **Frontend**: Vanilla JavaScript with custom web components
+- **Frontend**: Vanilla TypeScript with custom web components, compiled to `dist/frontend.js`
+- **Language**: TypeScript (strict); `npm run build` compiles to `dist/`, `npm test` type-checks and runs Vitest
 - **Data Storage**: Browser localStorage for preferences and manual date adjustments
 - **Calendar**: Custom interactive calendar renderer with click/double-click functionality
 

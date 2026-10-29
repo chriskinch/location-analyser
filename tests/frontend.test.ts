@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock, type MockInstance } from 'vitest';
 
-// Import the utilities exported by frontend.js
-// The module.exports guard in frontend.js makes these available in Node/Vitest.
-// The DOMContentLoaded callback at the bottom of frontend.js will not fire
+// Import the utilities exported by frontend.ts.
+// The DOMContentLoaded callback at the bottom of frontend.ts will not fire
 // automatically during import since jsdom's document is already parsed.
-import { debounce, CalendarRenderer, DateRangePicker } from '../frontend.js';
+import { debounce, CalendarRenderer, DateRangePicker } from '../frontend';
 
 describe('debounce', () => {
     beforeEach(() => {
@@ -66,7 +65,7 @@ describe('debounce', () => {
 });
 
 describe('CalendarRenderer.formatDateToYYYYMMDD', () => {
-    let renderer;
+    let renderer: CalendarRenderer;
 
     beforeEach(() => {
         // CalendarRenderer constructor calls document.getElementById and then render(),
@@ -93,12 +92,12 @@ describe('CalendarRenderer.formatDateToYYYYMMDD', () => {
 });
 
 describe('DateRangePicker.formatDateForInput', () => {
-    let picker;
+    let picker: DateRangePicker;
 
     beforeEach(() => {
         // DateRangePicker constructor creates shadow DOM with input elements
         document.body.innerHTML = '<date-range-picker id="picker"></date-range-picker>';
-        picker = document.getElementById('picker');
+        picker = document.getElementById('picker') as DateRangePicker;
     });
 
     it('formats a standard date', () => {
@@ -132,7 +131,7 @@ describe('timeline file upload handler', () => {
         <div id="calendarContainer"></div>
     `;
 
-    let fetchMock;
+    let fetchMock: Mock;
 
     beforeEach(() => {
         localStorage.clear();
@@ -150,11 +149,11 @@ describe('timeline file upload handler', () => {
         vi.unstubAllGlobals();
     });
 
-    function triggerFileChange(content) {
+    function triggerFileChange(content: string) {
         const file = new File([content], 'Timeline.json', { type: 'application/json' });
         // jsdom doesn't implement Blob.prototype.text(); stub it directly.
         file.text = () => Promise.resolve(content);
-        const input = document.getElementById('timelineFileInput');
+        const input = document.getElementById('timelineFileInput')!;
         Object.defineProperty(input, 'files', { value: [file], configurable: true });
         input.dispatchEvent(new Event('change'));
     }
@@ -168,7 +167,7 @@ describe('timeline file upload handler', () => {
         triggerFileChange(JSON.stringify({ semanticSegments: [] }));
         await new Promise(r => setTimeout(r, 0));
 
-        const status = document.getElementById('uploadStatus');
+        const status = document.getElementById('uploadStatus')!;
         expect(status.textContent).toContain('1,234 segments loaded');
         expect(status.style.color).toBe('rgb(46, 125, 50)'); // #2e7d32
     });
@@ -182,7 +181,7 @@ describe('timeline file upload handler', () => {
         triggerFileChange('{"notValid":true}');
         await new Promise(r => setTimeout(r, 0));
 
-        const status = document.getElementById('uploadStatus');
+        const status = document.getElementById('uploadStatus')!;
         expect(status.textContent).toContain('File must contain a semanticSegments array');
         expect(status.style.color).toBe('rgb(198, 40, 40)'); // #c62828
     });
@@ -191,7 +190,7 @@ describe('timeline file upload handler', () => {
 describe('CalendarRenderer interactions', () => {
     // January 2024: the 15th–19th are Mon–Fri. The 16th is visited in the timeline data.
     const ELIGIBLE = ['2024-01-15', '2024-01-16', '2024-01-17', '2024-01-18', '2024-01-19'];
-    let renderer, refresh, logSpy;
+    let renderer: CalendarRenderer, refresh: Mock, logSpy: MockInstance;
 
     function setup() {
         refresh = vi.fn();
@@ -199,11 +198,11 @@ describe('CalendarRenderer interactions', () => {
         renderer.currentMonth = new Date(2024, 0, 1);
         renderer.setDates(['2024-01-16'], ELIGIBLE, '2024-01-15T00:00:00', '2024-01-19T23:59:59');
     }
-    const day = n => document.querySelectorAll('#cal .calendar-day:not(.other-month)')[n - 1];
-    const stored = key => JSON.parse(localStorage.getItem(key));
-    const click = el => { el.dispatchEvent(new MouseEvent('click')); vi.advanceTimersByTime(200); };
+    const day = (n: number) => document.querySelectorAll<HTMLElement>('#cal .calendar-day:not(.other-month)')[n - 1];
+    const stored = (key: string) => JSON.parse(localStorage.getItem(key)!);
+    const click = (el: HTMLElement) => { el.dispatchEvent(new MouseEvent('click')); vi.advanceTimersByTime(200); };
     // A real double-click fires click, click, dblclick.
-    const dblclick = el => {
+    const dblclick = (el: HTMLElement) => {
         el.dispatchEvent(new MouseEvent('click'));
         el.dispatchEvent(new MouseEvent('click'));
         el.dispatchEvent(new MouseEvent('dblclick'));
@@ -226,7 +225,7 @@ describe('CalendarRenderer interactions', () => {
         setup();
         expect(day(15).classList).toContain('eligible-working-day');
         expect(day(16).classList).toContain('visited-day');
-        expect(day(16).querySelector('.day-indicator').textContent).toBe('Visited');
+        expect(day(16).querySelector('.day-indicator')!.textContent).toBe('Visited');
         expect(day(20).classList).toContain('weekend');
         expect(day(1).classList).toContain('bank-holiday');
     });
@@ -276,7 +275,7 @@ describe('CalendarRenderer interactions', () => {
         expect(localStorage.getItem('excludedDates')).toBeNull();
         expect(day(17).classList).toContain('manual-visited-day');
         expect(day(17).classList).toContain('visited-day');
-        expect(day(17).querySelector('.day-indicator').textContent).toBe('Visited');
+        expect(day(17).querySelector('.day-indicator')!.textContent).toBe('Visited');
         expect(refresh).toHaveBeenCalledTimes(1);
     });
 
@@ -328,10 +327,10 @@ describe('CalendarRenderer interactions', () => {
     it('navigates months with the prev/next buttons, keeping state', () => {
         setup();
         click(day(15));
-        document.querySelector('#nextMonth').click();
-        expect(document.querySelector('#cal h3').textContent).toMatch(/February/);
-        document.querySelector('#prevMonth').click();
-        expect(document.querySelector('#cal h3').textContent).toMatch(/January/);
+        document.querySelector<HTMLElement>('#nextMonth')!.click();
+        expect(document.querySelector('#cal h3')!.textContent).toMatch(/February/);
+        document.querySelector<HTMLElement>('#prevMonth')!.click();
+        expect(document.querySelector('#cal h3')!.textContent).toMatch(/January/);
         expect(day(15).classList).toContain('excluded-day');
     });
 });
