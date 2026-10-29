@@ -8,7 +8,8 @@ on:
   # The schedule covers what the events above miss: Copilot reviews
   # (pull_request_review would run PR-supplied workflow code with write
   # access) and merges made with GITHUB_TOKEN, which trigger no further runs.
-  # ponytail: up to 15 min lag after a review or merge; relay via an app token if that matters.
+  # Trade-off: up to 15 min lag after a review or merge. Triggering runs with
+  # an app token instead of GITHUB_TOKEN would remove it.
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
@@ -25,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Arm auto-merge on the oldest ready PR
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             // PRs merge in creation order (CLAUDE.md). Only the oldest open
