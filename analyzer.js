@@ -43,6 +43,11 @@ function formatDateToYYYYMMDD(date) {
     return `${year}-${month}-${day}`;
 }
 
+// Calendar day (YYYY-MM-DD) in UK local time, so BST instants land on the right UK day.
+function toLondonDay(date) {
+    return date.toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+}
+
 async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, manualVisitedDates, dataFilePath) {
     const filePath = dataFilePath || path.join(__dirname, 'timeline.json');
     let rawData;
@@ -94,13 +99,13 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
         return visitStartTimestamp.getTime() >= startDatetime.getTime() &&
                visitStartTimestamp.getTime() <= endDatetime.getTime();
     }).forEach(visit => {
-        uniqueVisitDaysFromTimeline.add(formatDateToYYYYMMDD(new Date(visit.startTimestamp)));
+        uniqueVisitDaysFromTimeline.add(toLondonDay(new Date(visit.startTimestamp)));
     });
 
     const frontendExcludedDates = excludedDates ? new Set(JSON.parse(excludedDates)) : new Set();
     // Manual visits are stored for all time; only count those inside the analysed range.
-    const startDay = formatDateToYYYYMMDD(startDatetime);
-    const endDay = formatDateToYYYYMMDD(endDatetime);
+    const startDay = toLondonDay(startDatetime);
+    const endDay = toLondonDay(endDatetime);
     const frontendManualVisitedDates = new Set(
         (manualVisitedDates ? JSON.parse(manualVisitedDates) : []).filter(d => d >= startDay && d <= endDay)
     );
@@ -110,10 +115,10 @@ async function analyzeTimelineData(placeId, startDate, endDate, excludedDates, m
 
     const eligibleWorkingDates = [];
     let totalEligibleWorkingDays = 0;
-    let currentDate = new Date(startDatetime);
-    currentDate.setUTCHours(0, 0, 0, 0);
+    let currentDate = new Date(`${startDay}T00:00:00.000Z`);
+    const lastDate = new Date(`${endDay}T00:00:00.000Z`);
 
-    while (currentDate <= endDatetime) {
+    while (currentDate <= lastDate) {
         const dayOfWeek = currentDate.getUTCDay();
         const dateYYYYMMDD = formatDateToYYYYMMDD(currentDate);
 
