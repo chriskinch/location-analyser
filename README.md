@@ -38,9 +38,9 @@ npm install
    - Open **Google Maps** → your profile picture → **Settings** → **Location** → **Google Location History** → **Export**
    - This downloads a `Timeline.json` file to your device; transfer it to your computer
 
-4. Start the server:
+4. Build and start the server:
 ```bash
-node app.js
+npm start
 ```
 
 5. Open your browser to http://127.0.0.1:3000/ and upload your `Timeline.json` via the **Upload Timeline Data** section at the top of the page
@@ -102,7 +102,8 @@ Analyzes timeline data for a specific location and date range.
 ## Architecture
 
 - **Backend**: Node.js HTTP server with timeline data processing
-- **Frontend**: Vanilla JavaScript with custom web components
+- **Frontend**: Vanilla TypeScript with custom web components, compiled to `dist/frontend.js`
+- **Language**: TypeScript (strict); `npm run build` compiles to `dist/`, `npm test` type-checks and runs Vitest
 - **Data Storage**: Browser localStorage for preferences and manual date adjustments
 - **Calendar**: Custom interactive calendar renderer with click/double-click functionality
 
@@ -119,6 +120,22 @@ Analyzes timeline data for a specific location and date range.
 3. Make your changes
 4. Test thoroughly
 5. Submit a pull request
+
+## Claude issue automation
+
+[`.github/workflows/claude-issues.yml`](.github/workflows/claude-issues.yml) uses [Claude Code Action](https://github.com/anthropics/claude-code-action) to work on issues:
+
+1. **Issue opened, or a new comment added:** Claude posts a requirements comment (acceptance criteria, scope, open questions) and updates that same comment as questions are answered in the thread.
+2. **`ready` label added:** Claude implements the change on a `<type>/<issue>-<slug>` branch, runs `npm test`, opens a PR that closes the issue, and comments the PR link on the issue. The PR then goes through the normal checks.
+
+Claude only acts on issues and comments from the repo owner and collaborators. Text from anyone else is never passed to it. Commits are authored as the repo owner, with `claude[bot]` as the committer.
+
+### Setup
+
+1. Install the [Claude GitHub App](https://github.com/apps/claude) on this repository. Implementation pushes and PRs use its token, so the PR triggers CI. PRs opened with `GITHUB_TOKEN` don't.
+2. Add a repository secret named `ANTHROPIC_API_KEY` (**Settings → Secrets and variables → Actions**). To use a Claude subscription instead, run `claude setup-token`, save the token as `CLAUDE_CODE_OAUTH_TOKEN`, and switch both `anthropic_api_key:` lines in the workflow to `claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}`.
+3. Create the `ready` label if it doesn't exist yet: `gh label create ready`.
+4. Recommended: enable the "Merge to main" ruleset, or protect `main`, so nothing can push to it directly.
 
 ## License
 

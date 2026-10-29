@@ -2,17 +2,25 @@
   "name": "takeout",
   "version": "1.0.0",
   "description": "",
-  "main": "app.js",
+  "main": "dist/app.js",
   "scripts": {
-    "start": "node app.js",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.frontend.json",
+    "start": "npm run build && node dist/app.js",
+    "typecheck": "tsc",
+    "test": "tsc && vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint ."
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.19.43",
+    "eslint": "^10.13.0",
     "http-server": "^14.1.1",
     "jsdom": "^25.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
     "vitest": "^2.0.0"
   },
   "engines": {

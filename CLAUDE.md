@@ -4,14 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Commands
 
-**Start the development server:**
+The codebase is TypeScript (strict). `tsc` compiles the server (`tsconfig.server.json`, CommonJS) and the browser script (`tsconfig.frontend.json`, ES module) into `dist/`; `dist/` is git-ignored. `index.html`, `archive_browser.html` and `timeline.json` stay at the repo root.
+
+**Build and start the server:**
 ```bash
-node app.js
+npm start
 ```
 
-**Use http-server for static serving (alternative):**
+**Build only:**
 ```bash
-npx http-server
+npm run build
+```
+
+**Type-check and run tests:**
+```bash
+npm test
 ```
 
 The application runs on `http://127.0.0.1:3000/` by default.
@@ -22,13 +29,13 @@ This is a location visit analysis application that processes Google Timeline/Tak
 
 ### Core Components
 
-**Backend (app.js):**
+**Backend (app.ts, analyzer.ts):**
 - Node.js HTTP server with `/analyze` API endpoint
 - Processes timeline data from `timeline.json` file
 - Calculates visits vs eligible working days (excluding weekends and UK bank holidays)
 - Handles manual date exclusions and additions from frontend
 
-**Frontend (frontend.js + index.html):**
+**Frontend (frontend.ts + index.html):**
 - Custom Web Component: `DateRangePicker` for date/time selection with localStorage persistence
 - `CalendarRenderer` class for interactive calendar visualization
 - Interactive calendar allows:
@@ -75,6 +82,7 @@ Returns:
 - Bank holiday lists need periodic updates for future years
 - Timeline data format follows Google Takeout semantic segments structure
 - Frontend uses ES6 modules and custom elements
+- Shared types for the timeline data and API responses live in `types.ts`
 - Calendar rendering optimized for month-by-month navigation
 - Debouncing prevents excessive API calls during user interactions
 
@@ -84,7 +92,7 @@ These rules govern how Claude Code must behave in this repository. They are not 
 
 ### Never Break the Running App
 
-- Verify `node app.js` starts cleanly after any backend change
+- Verify `npm start` builds and starts cleanly after any backend change
 - Verify the `/analyze` endpoint responds correctly after any server-side change
 - For frontend changes, test in a browser before declaring the task done
 - If a change could break something and cannot be verified, say so explicitly — do not claim success
@@ -93,7 +101,7 @@ These rules govern how Claude Code must behave in this repository. They are not 
 
 - Do not change the `/analyze` endpoint's query parameters or response shape without explicit approval
 - Do not rename or remove `localStorage` keys — this silently destroys saved user state
-- Do not rename or remove public functions or classes in `frontend.js` without explicit approval
+- Do not rename or remove public functions or classes in `frontend.ts` without explicit approval
 
 ### Protect Data Files
 
@@ -128,6 +136,14 @@ These rules govern how Claude Code must behave in this repository. They are not 
 ### PR Merge Order
 
 - Always merge PRs in the order they were created — do not merge a later PR before an earlier one is resolved
+
+### Auto Merge
+
+- Add the `automerge` label to a PR to have it merge itself (merge commit) once it is ready
+- `.github/workflows/auto-merge.yml` arms GitHub auto-merge only on the oldest open PR against `main`, and only once that PR is labelled and Copilot has reviewed its latest commit. It switches auto-merge off on every later PR, so creation order holds
+- The "Merge to main" ruleset holds the merge until the `test` check passes and every review thread is resolved. Resolve each Copilot comment thread to unblock it
+- An unlabelled or failing PR at the front of the line holds up every PR behind it. Fix it, merge it by hand, or close it
+- Copilot reviews and merges made by the workflow are picked up by the 15-minute schedule, not by an event. Run the workflow manually to go sooner
 
 ### PR Review Workflow
 

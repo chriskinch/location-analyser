@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import http from 'http';
 import net from 'net';
@@ -12,30 +12,42 @@ const __dirname = path.dirname(__filename);
 const ROOT = path.join(__dirname, '..');
 const FIXTURE = path.join(__dirname, 'fixtures', 'timeline.test.json');
 
-// app.js listens as soon as it is loaded and reads/writes timeline.json next to
-// itself, so each server runs as a child process from a throwaway copy in a
-// temp dir. Uploads never touch the repo's real timeline.json.
-async function startServer({ timeline } = {}) {
+// Compile the server once per run so these tests exercise the current source, not a stale dist/.
+const BUILD = fs.mkdtempSync(path.join(os.tmpdir(), 'location-analyser-build-'));
+beforeAll(() => {
+    execFileSync(process.execPath, [
+        path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'),
+        '-p', path.join(ROOT, 'tsconfig.server.json'), '--outDir', BUILD,
+    ]);
+}, 60_000);
+afterAll(() => fs.rmSync(BUILD, { recursive: true, force: true }));
+
+// dist/app.js listens as soon as it is loaded and reads/writes timeline.json in
+// the directory above it, so each server runs as a child process from a
+// throwaway copy in a temp dir. Uploads never touch the repo's real timeline.json.
+async function startServer({ timeline }: { timeline?: string } = {}) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'location-analyser-'));
-    for (const f of ['app.js', 'analyzer.js', 'index.html']) {
-        fs.copyFileSync(path.join(ROOT, f), path.join(dir, f));
+    fs.mkdirSync(path.join(dir, 'dist'));
+    for (const f of ['app.js', 'analyzer.js']) {
+        fs.copyFileSync(path.join(BUILD, f), path.join(dir, 'dist', f));
     }
-    // frontend.js is deliberately not copied, to exercise the static read-error path.
+    fs.copyFileSync(path.join(ROOT, 'index.html'), path.join(dir, 'index.html'));
+    // dist/frontend.js is deliberately not copied, to exercise the static read-error path.
     if (timeline) fs.copyFileSync(timeline, path.join(dir, 'timeline.json'));
 
-    const port = await new Promise(resolve => {
+    const port = await new Promise<number>(resolve => {
         const s = net.createServer().listen(0, '127.0.0.1', () => {
-            const { port } = s.address();
+            const { port } = s.address() as net.AddressInfo;
             s.close(() => resolve(port));
         });
     });
 
-    const child = spawn(process.execPath, ['app.js'], {
+    const child = spawn(process.execPath, [path.join('dist', 'app.js')], {
         cwd: dir,
         env: { ...process.env, HOST: '127.0.0.1', PORT: String(port) },
     });
-    await new Promise((resolve, reject) => {
-        child.stdout.on('data', d => { if (d.toString().includes('Server running')) resolve(); });
+    await new Promise<void>((resolve, reject) => {
+        child.stdout.on('data', (d: Buffer) => { if (d.toString().includes('Server running')) resolve(); });
         child.on('exit', code => reject(new Error(`server exited early with code ${code}`)));
     });
 
@@ -49,7 +61,7 @@ async function startServer({ timeline } = {}) {
     };
 }
 
-function analyzeUrl(base, params) {
+function analyzeUrl(base: string, params: Record<string, string>) {
     return `${base}/analyze?${new URLSearchParams(params)}`;
 }
 
@@ -60,7 +72,7 @@ const WEEK = {
 };
 
 describe('static file allowlist', () => {
-    let srv;
+    let srv: Awaited<ReturnType<typeof startServer>>;
     beforeAll(async () => { srv = await startServer(); });
     afterAll(() => srv.stop());
 
@@ -84,7 +96,7 @@ describe('static file allowlist', () => {
     it.each(['/../app.js', '/%2e%2e/app.js', '/..%2fapp.js'])(
         'returns 404 for traversal path %s',
         async p => {
-            const status = await new Promise((resolve, reject) => {
+            const status = await new Promise<number | undefined>((resolve, reject) => {
                 http.get(`${srv.base}/`, { path: p }, res => { res.resume(); resolve(res.statusCode); })
                     .on('error', reject);
             });
@@ -106,7 +118,7 @@ describe('static file allowlist', () => {
 
 describe('GET /analyze', () => {
     describe('with timeline data', () => {
-        let srv;
+        let srv: Awaited<ReturnType<typeof startServer>>;
         beforeAll(async () => { srv = await startServer({ timeline: FIXTURE }); });
         afterAll(() => srv.stop());
 
@@ -132,7 +144,7 @@ describe('GET /analyze', () => {
         });
 
         it.each(['placeId', 'startDate', 'endDate'])('returns 400 when %s is missing', async key => {
-            const params = { ...WEEK };
+            const params: Record<string, string> = { ...WEEK };
             delete params[key];
             const res = await fetch(analyzeUrl(srv.base, params));
             expect(res.status).toBe(400);
@@ -152,7 +164,7 @@ describe('GET /analyze', () => {
     });
 
     describe('without timeline data', () => {
-        let srv;
+        let srv: Awaited<ReturnType<typeof startServer>>;
         beforeAll(async () => { srv = await startServer(); });
         afterAll(() => srv.stop());
 
@@ -165,11 +177,11 @@ describe('GET /analyze', () => {
 });
 
 describe('POST /upload-timeline', () => {
-    let srv;
+    let srv: Awaited<ReturnType<typeof startServer>>;
     beforeAll(async () => { srv = await startServer(); });
     afterAll(() => srv.stop());
 
-    const post = (body, contentType = 'application/json') =>
+    const post = (body: string, contentType = 'application/json') =>
         fetch(`${srv.base}/upload-timeline`, {
             method: 'POST',
             headers: { 'Content-Type': contentType },
@@ -210,7 +222,7 @@ describe('POST /upload-timeline', () => {
 
     it('returns 413 for a body over 200 MB', async () => {
         const chunk = Buffer.alloc(1024 * 1024, 0x20); // 1 MB of spaces
-        const status = await new Promise((resolve, reject) => {
+        const status = await new Promise<number | undefined>((resolve, reject) => {
             const req = http.request(`${srv.base}/upload-timeline`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -219,10 +231,10 @@ describe('POST /upload-timeline', () => {
             req.on('response', res => { done = true; res.resume(); resolve(res.statusCode); req.destroy(); });
             req.on('error', err => { if (!done) reject(err); });
             let sent = 0;
-            const pump = () => {
+            const pump = (): void => {
                 while (!done && sent <= 201) {
                     sent++;
-                    if (!req.write(chunk)) return req.once('drain', pump);
+                    if (!req.write(chunk)) { req.once('drain', pump); return; }
                 }
                 if (!done) req.end();
             };
