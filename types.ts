@@ -26,7 +26,7 @@ export interface AnalysisResult {
     eligibleWorkingDates: string[];
 }
 
-// Error body returned by /analyze and /upload-timeline.
+// Error body returned by /analyze, /upload-timeline and /state.
 export interface ErrorResponse {
     error: string;
 }
@@ -36,3 +36,9 @@ export interface UploadResult {
     ok: true;
     segments: number;
 }
+
+// Keys the frontend saves in localStorage and shares via GET/PATCH /state.
+export type StateKey = 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'placeId' | 'excludedDates' | 'manualVisitedDates';
+
+// GET /state response and PATCH /state body: localStorage key -> the exact string stored there.
+export type SavedState = Partial<Record<StateKey, string>>;

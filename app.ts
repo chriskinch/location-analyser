@@ -3,7 +3,7 @@ import fs from 'fs';
 import url from 'url';
 import path from 'path';
 import { analyzeTimelineData } from './analyzer';
-import type { TimelineData } from './types';
+import type { SavedState, TimelineData } from './types';
 
 // Compiled to dist/; HTML pages and timeline.json live at the repo root.
 const ROOT = path.join(__dirname, '..');
@@ -21,14 +21,14 @@ const port = (() => {
 
 const MAX_BODY_BYTES = 200 * 1024 * 1024; // 200 MB
 
-function readBody(req: http.IncomingMessage): Promise<string> {
+function readBody(req: http.IncomingMessage, limit = MAX_BODY_BYTES): Promise<string> {
     return new Promise((resolve, reject) => {
         const chunks: Buffer[] = [];
         let size = 0;
         let tooLarge = false;
         req.on('data', (chunk: Buffer) => {
             size += chunk.length;
-            if (size > MAX_BODY_BYTES) {
+            if (size > limit) {
                 if (!tooLarge) {
                     tooLarge = true;
                     req.resume(); // drain without closing socket so caller can still send 413
@@ -41,6 +41,48 @@ function readBody(req: http.IncomingMessage): Promise<string> {
         req.on('end', () => { if (!tooLarge) resolve(Buffer.concat(chunks).toString('utf8')); });
         req.on('error', reject);
     });
+}
+
+// Saved selections shared by every browser on this machine. Values are the same strings the frontend keeps in localStorage.
+const STATE_FILE = path.join(ROOT, 'state.json');
+const STATE_KEYS = new Set(['startDate', 'startTime', 'endDate', 'endTime', 'placeId', 'excludedDates', 'manualVisitedDates']);
+const DATE_LIST_KEYS = new Set(['excludedDates', 'manualVisitedDates']);
+const MAX_STATE_BYTES = 64 * 1024;
+// Only answer /state for our own origin, so a DNS-rebinding page can't read or write it.
+const STATE_HOSTS = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `${hostname}:${port}`]);
+
+function readState(): SavedState {
+    try {
+        return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+        throw err;
+    }
+}
+
+// Returns an error message, or null if body is a valid partial state.
+function validateState(body: unknown): string | null {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Body must be a JSON object';
+    for (const [key, value] of Object.entries(body)) {
+        if (!STATE_KEYS.has(key)) return `Unknown key: ${key}`;
+        if (typeof value !== 'string') return `${key} must be a string`;
+        if (DATE_LIST_KEYS.has(key)) {
+            let list: unknown;
+            try { list = JSON.parse(value); } catch { list = null; }
+            if (!Array.isArray(list) || !list.every(d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))) {
+                return `${key} must be a JSON array of YYYY-MM-DD dates`;
+            }
+        }
+    }
+    return null;
+}
+
+// Write to a temp file then rename, so a crash mid-write never leaves a truncated state.json.
+// Sync on purpose: concurrent requests can't interleave their read-merge-write.
+function writeState(state: SavedState) {
+    const tmp = `${STATE_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+    fs.renameSync(tmp, STATE_FILE);
 }
 
 // Create the HTTP server
@@ -82,6 +124,34 @@ const server = http.createServer(async (req, res) => {
             }
         }
         return;
+    }
+
+    // Saved selections: GET returns them ({} if none yet), PATCH merges the keys sent (per-key last write wins)
+    if (reqUrl.pathname === '/state' && (req.method === 'GET' || req.method === 'PATCH')) {
+        const send = (status: number, body: unknown) => {
+            res.writeHead(status, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(body));
+        };
+        if (!STATE_HOSTS.has(req.headers.host || '')) return send(403, { error: 'Forbidden' });
+        try {
+            if (req.method === 'GET') return send(200, readState());
+            if (!(req.headers['content-type'] || '').includes('application/json')) {
+                return send(415, { error: 'Content-Type must be application/json' });
+            }
+            let body: unknown;
+            try { body = JSON.parse(await readBody(req, MAX_STATE_BYTES)); } catch (err) {
+                if ((err as NodeJS.ErrnoException).code === 'PAYLOAD_TOO_LARGE') return send(413, { error: 'State too large (64 KB limit)' });
+                return send(400, { error: 'Invalid JSON' });
+            }
+            const invalid = validateState(body);
+            if (invalid) return send(400, { error: invalid });
+            const state = { ...readState(), ...(body as SavedState) };
+            writeState(state);
+            return send(200, state);
+        } catch (err) {
+            console.error('State error:', err);
+            return send(500, { error: 'Could not read or write saved state' });
+        }
     }
 
     // API endpoint for analysis

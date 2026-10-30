@@ -243,3 +243,86 @@ describe('POST /upload-timeline', () => {
         expect(status).toBe(413);
     }, 30_000);
 });
+
+describe('GET/PATCH /state', () => {
+    let srv: Awaited<ReturnType<typeof startServer>>;
+    beforeAll(async () => { srv = await startServer(); });
+    afterAll(() => srv.stop());
+
+    const stateFile = () => path.join(srv.dir, 'state.json');
+    const patch = (body: string, contentType = 'application/json') =>
+        fetch(`${srv.base}/state`, { method: 'PATCH', headers: { 'Content-Type': contentType }, body });
+
+    it('returns {} when state.json does not exist yet', async () => {
+        expect(fs.existsSync(stateFile())).toBe(false);
+        const res = await fetch(`${srv.base}/state`);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({});
+    });
+
+    it('writes state.json and merges later PATCHes key by key', async () => {
+        let res = await patch(JSON.stringify({ placeId: 'p1', excludedDates: '["2024-01-17"]' }));
+        expect(res.status).toBe(200);
+        res = await patch(JSON.stringify({ placeId: 'p2', startDate: '2024-01-01' }));
+        const merged = { placeId: 'p2', excludedDates: '["2024-01-17"]', startDate: '2024-01-01' };
+        expect(await res.json()).toEqual(merged);
+        expect(JSON.parse(fs.readFileSync(stateFile(), 'utf8'))).toEqual(merged);
+        expect(await (await fetch(`${srv.base}/state`)).json()).toEqual(merged);
+    });
+
+    it('writes atomically: no temp file is left and concurrent PATCHes all land', async () => {
+        await Promise.all([
+            patch(JSON.stringify({ startTime: '08:00' })),
+            patch(JSON.stringify({ endTime: '18:00' })),
+            patch(JSON.stringify({ manualVisitedDates: '["2024-01-18"]' })),
+        ]);
+        const state = JSON.parse(fs.readFileSync(stateFile(), 'utf8'));
+        expect(state).toMatchObject({ startTime: '08:00', endTime: '18:00', manualVisitedDates: '["2024-01-18"]' });
+        expect(fs.readdirSync(srv.dir).filter(f => f.endsWith('.tmp'))).toEqual([]);
+    });
+
+    it('returns 415 for a non-JSON content type', async () => {
+        expect((await patch('{}', 'text/plain')).status).toBe(415);
+    });
+
+    it.each([
+        ['invalid JSON', '{not json', 'Invalid JSON'],
+        ['an array', '[]', 'Body must be a JSON object'],
+        ['null', 'null', 'Body must be a JSON object'],
+        ['an unknown key', '{"evil":"x"}', 'Unknown key: evil'],
+        ['a non-string value', '{"placeId":1}', 'placeId must be a string'],
+        ['a date list that is not JSON', '{"excludedDates":"nope"}', 'excludedDates must be a JSON array of YYYY-MM-DD dates'],
+        ['a date list with a bad date', '{"manualVisitedDates":"[\\"17/01/2024\\"]"}', 'manualVisitedDates must be a JSON array of YYYY-MM-DD dates'],
+    ])('returns 400 for %s and leaves state.json unchanged', async (_, body, error) => {
+        const before = fs.readFileSync(stateFile(), 'utf8');
+        const res = await patch(body);
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe(error);
+        expect(fs.readFileSync(stateFile(), 'utf8')).toBe(before);
+    });
+
+    it('returns 413 for a body over 64 KB', async () => {
+        const res = await patch(JSON.stringify({ placeId: 'x'.repeat(65 * 1024) }));
+        expect(res.status).toBe(413);
+    });
+
+    // fetch won't let us set Host, so use http.request.
+    it.each(['GET', 'PATCH'])('returns 403 for %s with a foreign Host header (DNS rebinding)', async method => {
+        const status = await new Promise<number | undefined>((resolve, reject) => {
+            const req = http.request(`${srv.base}/state`, {
+                method,
+                agent: false,
+                headers: { Host: `evil.example:${new URL(srv.base).port}`, 'Content-Type': 'application/json' },
+            }, res => { res.resume(); resolve(res.statusCode); });
+            req.on('error', reject);
+            req.end(method === 'PATCH' ? '{"placeId":"pwned"}' : undefined);
+        });
+        expect(status).toBe(403);
+        expect(JSON.parse(fs.readFileSync(stateFile(), 'utf8')).placeId).toBe('p2');
+    });
+
+    it('sends no CORS headers', async () => {
+        const res = await fetch(`${srv.base}/state`, { headers: { Origin: 'https://evil.example' } });
+        expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    });
+});

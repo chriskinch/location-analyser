@@ -60,6 +60,9 @@ timeline.*.json
 # ...but keep test fixtures, which are synthetic data committed to the repo
 !tests/fixtures/*.json
 
+# Saved selections shared between browsers (personal data)
+state.json
+
 # Temporary files
 *.tmp
 *.temp
