@@ -224,16 +224,31 @@ describe('CalendarRenderer interactions', () => {
         vi.advanceTimersByTime(200);
     };
 
+    let fetchMock: Mock;
+
     beforeEach(() => {
         vi.useFakeTimers();
         logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
         localStorage.clear();
         document.body.innerHTML = '<div id="cal"></div>';
+        fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+        vi.stubGlobal('fetch', fetchMock);
     });
 
     afterEach(() => {
         logSpy.mockRestore();
         vi.useRealTimers();
+        vi.unstubAllGlobals();
+    });
+
+    it('writes toggled dates through to the server as well as localStorage', () => {
+        setup();
+        click(day(15));
+        expect(stored('excludedDates')).toEqual(['2024-01-15']);
+        expect(fetchMock).toHaveBeenCalledWith('/state', expect.objectContaining({
+            method: 'PATCH',
+            body: JSON.stringify({ excludedDates: '["2024-01-15"]' }),
+        }));
     });
 
     it('renders eligible, visited, weekend and bank holiday classes', () => {
@@ -377,5 +392,90 @@ describe('CalendarRenderer.changeMonth', () => {
         expect(seen[7]).toBe('February 2026');
         r.changeMonth(1);
         expect(shown(r)).toBe('March 2026');
+    });
+});
+
+describe('server-saved state on page load', () => {
+    const DOM = `
+        <input type="text" id="placeIdInput" value="">
+        <date-range-picker id="datePicker"></date-range-picker>
+        <button id="analyzeButton">Analyze</button>
+        <button id="last90DaysButton">Last 90 Days</button>
+        <pre id="results"></pre>
+        <button id="todayButton">Today</button>
+        <div id="calendarContainer"></div>
+    `;
+    let fetchMock: Mock, warnSpy: MockInstance;
+
+    // GET /state answers with `state` (or rejects if null); PATCH succeeds; /analyze fails harmlessly.
+    function server(state: Record<string, string> | null) {
+        fetchMock = vi.fn(async (url: string, opts?: RequestInit) => {
+            if (url === '/state' && !opts) {
+                if (!state) throw new TypeError('Failed to fetch');
+                return { ok: true, json: async () => state };
+            }
+            return { ok: url === '/state', json: async () => ({ error: 'no timeline' }) };
+        });
+        vi.stubGlobal('fetch', fetchMock);
+    }
+    const patches = () => fetchMock.mock.calls
+        .filter(([url, opts]) => url === '/state' && opts?.method === 'PATCH')
+        .map(([, opts]) => JSON.parse(opts.body));
+    async function load() {
+        document.body.innerHTML = DOM;
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+        await new Promise(r => setTimeout(r, 0));
+    }
+    const picker = () => document.getElementById('datePicker') as DateRangePicker;
+    const placeId = () => (document.getElementById('placeIdInput') as HTMLInputElement).value;
+
+    beforeEach(() => {
+        localStorage.clear();
+        warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => {
+        warnSpy.mockRestore();
+        vi.unstubAllGlobals();
+    });
+
+    it('adopts the server state over this browser\'s localStorage without writing back', async () => {
+        localStorage.setItem('placeId', 'local-place');
+        localStorage.setItem('excludedDates', '["2024-01-01"]');
+        server({
+            placeId: 'server-place', excludedDates: '["2024-01-17"]',
+            startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00',
+        });
+        await load();
+        expect(placeId()).toBe('server-place');
+        expect(localStorage.getItem('excludedDates')).toBe('["2024-01-17"]');
+        expect(picker().startDateInput.value).toBe('2024-02-01');
+        expect(picker().endTimeInput.value).toBe('18:00');
+        expect(patches()).toEqual([]);
+    });
+
+    it('uploads this browser\'s localStorage when the server has no state yet', async () => {
+        localStorage.setItem('placeId', 'local-place');
+        localStorage.setItem('manualVisitedDates', '["2024-01-18"]');
+        server({});
+        await load();
+        expect(patches()).toEqual([{ placeId: 'local-place', manualVisitedDates: '["2024-01-18"]' }]);
+        expect(placeId()).toBe('local-place');
+    });
+
+    it('falls back to localStorage when the server is unreachable', async () => {
+        localStorage.setItem('placeId', 'local-place');
+        server(null);
+        await load();
+        expect(placeId()).toBe('local-place');
+    });
+
+    it('writes a changed Place ID through to the server', async () => {
+        server({ placeId: 'server-place' });
+        await load();
+        const input = document.getElementById('placeIdInput') as HTMLInputElement;
+        input.value = ' new-place ';
+        input.dispatchEvent(new Event('change'));
+        expect(localStorage.getItem('placeId')).toBe('new-place');
+        expect(patches()).toEqual([{ placeId: 'new-place' }]);
     });
 });
