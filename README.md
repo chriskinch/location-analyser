@@ -75,6 +75,22 @@ The application expects Google Timeline data in the semantic segments format:
 }
 ```
 
+## Cached holidays (`holidays.json`)
+
+Days listed in `holidays.json` at the repo root are excluded from working days automatically, as if you had clicked them in the calendar. The file is git-ignored (personal data). A missing or empty file means no cached holidays.
+
+It's a JSON array. Each entry is a date string or an object with an optional note, and you can edit it by hand:
+```json
+[
+  "2026-08-24",
+  { "date": "2026-09-07", "note": "Workday: Sickness" }
+]
+```
+
+- **Fill it from Workday:** in Claude Code, run `/sync-holidays` ([skill](.claude/skills/sync-holidays/SKILL.md)). It reads your approved absences for the past 90 days from Workday's My Absence page (read-only) and adds the dates. It never removes or changes dates already in the file.
+- **Calendar:** cached days use the normal excluded style. Clicking one makes it eligible again in this browser only (saved in localStorage as `holidayOverrides`; the file is not changed). Click again to re-exclude it. Double-click still marks a day as visited.
+- A malformed file is reported in the browser console, and the page works as if the file were empty.
+
 ## API
 
 ### GET `/analyze`
@@ -99,6 +115,10 @@ Analyzes timeline data for a specific location and date range.
 }
 ```
 
+### GET `/holidays`
+
+The dates in `holidays.json`, sorted and de-duplicated, e.g. `["2026-08-24", "2026-09-07"]`. Returns `[]` when the file is missing or empty, and 500 if it is malformed.
+
 ### GET/PATCH `/state`
 
 Your saved selections (date range, Place ID, excluded and manually visited days). `GET` returns them, or `{}` if nothing is saved yet. `PATCH` merges the keys you send, so the last write wins for each key. `PATCH /state?ifEmpty=1` writes only if nothing is saved yet; it's used for the first-browser upload, and returns whatever is saved. Only same-origin requests to `127.0.0.1`/`localhost` are accepted.
@@ -117,7 +137,7 @@ Selections are kept in the browser's localStorage, as before, and mirrored to `s
 
 ## Privacy
 
-- Timeline data files (`timeline*.json`) are automatically excluded from git
+- Timeline data files (`timeline*.json`) and `holidays.json` are automatically excluded from git
 - No data is sent to external servers - all processing happens locally
 - Manual date adjustments are stored in your browser's localStorage and in the git-ignored `state.json` on your machine
 

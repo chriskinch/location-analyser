@@ -28,7 +28,7 @@ afterAll(() => fs.rmSync(BUILD, { recursive: true, force: true }));
 async function startServer({ timeline }: { timeline?: string } = {}) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'location-analyser-'));
     fs.mkdirSync(path.join(dir, 'dist'));
-    for (const f of ['app.js', 'analyzer.js']) {
+    for (const f of ['app.js', 'analyzer.js', 'holidays.js']) {
         fs.copyFileSync(path.join(BUILD, f), path.join(dir, 'dist', f));
     }
     fs.copyFileSync(path.join(ROOT, 'index.html'), path.join(dir, 'index.html'));
@@ -173,6 +173,50 @@ describe('GET /analyze', () => {
             expect(res.status).toBe(500);
             expect((await res.json()).error).toMatch(/Failed to read timeline data/);
         });
+    });
+});
+
+describe('GET /holidays', () => {
+    let srv: Awaited<ReturnType<typeof startServer>>;
+    beforeAll(async () => { srv = await startServer(); });
+    afterAll(() => srv.stop());
+    const write = (content: string) => fs.writeFileSync(path.join(srv.dir, 'holidays.json'), content);
+
+    it('returns [] when holidays.json is missing', async () => {
+        const res = await fetch(`${srv.base}/holidays`);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual([]);
+    });
+
+    it('returns the cached dates, sorted and de-duplicated', async () => {
+        write('["2026-09-01", {"date": "2026-08-14", "note": "Annual leave"}, "2026-09-01"]');
+        expect(await (await fetch(`${srv.base}/holidays`)).json()).toEqual(['2026-08-14', '2026-09-01']);
+    });
+
+    it('returns 500 for malformed holidays.json', async () => {
+        write('[oops');
+        const res = await fetch(`${srv.base}/holidays`);
+        expect(res.status).toBe(500);
+        expect((await res.json()).error).toMatch(/Failed to read holidays.json/);
+    });
+
+    // fetch won't let us set Host, so use http.request.
+    it('returns 403 with a foreign Host header (DNS rebinding)', async () => {
+        write('["2026-08-14"]');
+        const { status, body } = await new Promise<{ status?: number; body: string }>((resolve, reject) => {
+            const req = http.request(`${srv.base}/holidays`, {
+                agent: false,
+                headers: { Host: `evil.example:${new URL(srv.base).port}` },
+            }, res => {
+                let body = '';
+                res.on('data', chunk => { body += chunk; });
+                res.on('end', () => resolve({ status: res.statusCode, body }));
+            });
+            req.on('error', reject);
+            req.end();
+        });
+        expect(status).toBe(403);
+        expect(body).not.toContain('2026-08-14');
     });
 });
 

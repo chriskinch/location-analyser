@@ -355,6 +355,78 @@ describe('CalendarRenderer interactions', () => {
         expect(day(17).classList).not.toContain('excluded-day');
     });
 
+    describe('cached holidays (holidays.json)', () => {
+        const withHoliday = (date = '2024-01-17') => {
+            setup();
+            renderer.holidayDates = new Set([date]);
+            renderer.render();
+        };
+
+        it('shows a cached holiday as excluded and sends it to /analyze without saving it to excludedDates', () => {
+            withHoliday();
+            expect(day(17).classList).toContain('excluded-day');
+            expect(day(17).classList).not.toContain('eligible-working-day');
+            expect(renderer.getEffectiveExcludedDates()).toEqual(['2024-01-17']);
+            expect(localStorage.getItem('excludedDates')).toBeNull();
+        });
+
+        it('merges cached holidays with the user\'s own exclusions', () => {
+            localStorage.setItem('excludedDates', JSON.stringify(['2024-01-15', '2024-01-17']));
+            withHoliday();
+            expect(renderer.getEffectiveExcludedDates().sort()).toEqual(['2024-01-15', '2024-01-17']);
+        });
+
+        it('single click un-excludes a holiday in this browser only, and a second click re-excludes it', () => {
+            withHoliday();
+            click(day(17));
+            expect(stored('holidayOverrides')).toEqual(['2024-01-17']);
+            expect(localStorage.getItem('excludedDates')).toBeNull();
+            expect(day(17).classList).not.toContain('excluded-day');
+            expect(renderer.getEffectiveExcludedDates()).toEqual([]);
+
+            click(day(17));
+            expect(stored('holidayOverrides')).toEqual([]);
+            expect(localStorage.getItem('excludedDates')).toBeNull();
+            expect(day(17).classList).toContain('excluded-day');
+            expect(renderer.getEffectiveExcludedDates()).toEqual(['2024-01-17']);
+            expect(refresh).toHaveBeenCalledTimes(2);
+        });
+
+        it('clicking a holiday the user also excluded by hand leaves the shared excludedDates alone', () => {
+            localStorage.setItem('excludedDates', JSON.stringify(['2024-01-17']));
+            withHoliday();
+            click(day(17));
+            expect(day(17).classList).not.toContain('excluded-day');
+            expect(renderer.getEffectiveExcludedDates()).toEqual([]);
+            click(day(17));
+            expect(day(17).classList).toContain('excluded-day');
+            expect(stored('excludedDates')).toEqual(['2024-01-17']);
+            expect(renderer.getEffectiveExcludedDates()).toEqual(['2024-01-17']);
+        });
+
+        it('keeps the override across reloads', () => {
+            localStorage.setItem('holidayOverrides', JSON.stringify(['2024-01-17']));
+            withHoliday();
+            expect(day(17).classList).not.toContain('excluded-day');
+            expect(renderer.getEffectiveExcludedDates()).toEqual([]);
+        });
+
+        it('double click marks a holiday as visited, which un-excludes it', () => {
+            withHoliday();
+            dblclick(day(17));
+            expect(stored('manualVisitedDates')).toEqual(['2024-01-17']);
+            expect(day(17).classList).not.toContain('excluded-day');
+            expect(renderer.getEffectiveExcludedDates()).toEqual([]);
+        });
+
+        it('with no cached holidays, behaves exactly as before', () => {
+            setup();
+            expect(renderer.holidayDates.size).toBe(0);
+            expect(renderer.getEffectiveExcludedDates()).toEqual([]);
+            expect(localStorage.getItem('holidayOverrides')).toBeNull();
+        });
+    });
+
     it('navigates months with the prev/next buttons, keeping state', () => {
         setup();
         click(day(15));
