@@ -199,6 +199,25 @@ describe('GET /holidays', () => {
         expect(res.status).toBe(500);
         expect((await res.json()).error).toMatch(/Failed to read holidays.json/);
     });
+
+    // fetch won't let us set Host, so use http.request.
+    it('returns 403 with a foreign Host header (DNS rebinding)', async () => {
+        write('["2026-08-14"]');
+        const { status, body } = await new Promise<{ status?: number; body: string }>((resolve, reject) => {
+            const req = http.request(`${srv.base}/holidays`, {
+                agent: false,
+                headers: { Host: `evil.example:${new URL(srv.base).port}` },
+            }, res => {
+                let body = '';
+                res.on('data', chunk => { body += chunk; });
+                res.on('end', () => resolve({ status: res.statusCode, body }));
+            });
+            req.on('error', reject);
+            req.end();
+        });
+        expect(status).toBe(403);
+        expect(body).not.toContain('2026-08-14');
+    });
 });
 
 describe('POST /upload-timeline', () => {

@@ -49,7 +49,7 @@ const STATE_FILE = path.join(ROOT, 'state.json');
 const STATE_KEYS = new Set(['startDate', 'startTime', 'endDate', 'endTime', 'placeId', 'excludedDates', 'manualVisitedDates']);
 const DATE_LIST_KEYS = new Set(['excludedDates', 'manualVisitedDates']);
 const MAX_STATE_BYTES = 64 * 1024;
-// Only answer /state for our own origin, so a DNS-rebinding page can't read or write it.
+// Only answer /state and /holidays for our own origin, so a DNS-rebinding page can't read or write them.
 // Browsers omit the port from Host when it is 80, and bracket IPv6 addresses (HOST=::1 -> [::1]).
 const STATE_HOSTS = new Set(['127.0.0.1', 'localhost', hostname.includes(':') ? `[${hostname}]` : hostname]
     .map(h => port === 80 ? h : `${h}:${port}`));
@@ -187,6 +187,11 @@ const server = http.createServer(async (req, res) => {
     // Cached annual leave dates from holidays.json; [] when the file is missing or empty
     if (reqUrl.pathname === '/holidays' && req.method === 'GET') {
         res.setHeader('Content-Type', 'application/json');
+        if (!STATE_HOSTS.has(req.headers.host || '')) {
+            res.statusCode = 403;
+            res.end(JSON.stringify({ error: 'Forbidden' }));
+            return;
+        }
         try {
             res.statusCode = 200;
             res.end(JSON.stringify(holidayDates(await readHolidayEntries())));
