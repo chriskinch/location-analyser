@@ -119,6 +119,14 @@ describe('workday CLI', () => {
         ]);
     });
 
+    it('counts the window in London calendar days across a BST change', async () => {
+        // Late on 29 Oct (GMT) the 90-day window starts on 31 Jul (BST); 90 x 24h would land on 1 Aug.
+        const target = file('holidays.json');
+        const rows = JSON.stringify([{ date: '31/07/2026', type: 'Vacation', requested: 1, unit: 'Days', status: 'Approved' }]);
+        await main(['workday', file('rows.json', rows), '90', target], new Date('2026-10-29T23:30:00Z'));
+        expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toEqual([{ date: '2026-07-31', note: 'Workday: Vacation' }]);
+    });
+
     it('leaves a malformed holidays.json untouched', async () => {
         const target = file('holidays.json', '[oops');
         await expect(main(['workday', file('rows.json', ROWS), '90', target], NOW)).rejects.toThrow();

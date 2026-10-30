@@ -75,9 +75,12 @@ function absencesToHolidays(rows: AbsenceRow[], since: string, until: string): H
     }).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-// Calendar day (YYYY-MM-DD) in UK local time, `daysAgo` days before `now`.
+// Calendar day (YYYY-MM-DD) in UK local time, `daysAgo` calendar days before `now`.
+// Takes the London date first and steps whole days in UTC, so a BST change inside the window can't shift it.
 function londonDay(now: Date, daysAgo = 0) {
-    return new Date(now.getTime() - daysAgo * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+    const day = new Date(`${now.toLocaleDateString('en-CA', { timeZone: 'Europe/London' })}T00:00:00Z`);
+    day.setUTCDate(day.getUTCDate() - daysAgo);
+    return day.toISOString().slice(0, 10);
 }
 
 // CLI used by the sync-holidays skill: node dist/holidays.js workday <rows.json> [days=90] [holidays.json]
