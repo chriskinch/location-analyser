@@ -99,19 +99,27 @@ Analyzes timeline data for a specific location and date range.
 }
 ```
 
+### GET/PATCH `/state`
+
+Your saved selections (date range, Place ID, excluded and manually visited days). `GET` returns them, or `{}` if nothing is saved yet. `PATCH` merges the keys you send, so the last write wins for each key. `PATCH /state?ifEmpty=1` writes only if nothing is saved yet; it's used for the first-browser upload, and returns whatever is saved. Only same-origin requests to `127.0.0.1`/`localhost` are accepted.
+
+## Saved selections (`state.json`)
+
+Selections are kept in the browser's localStorage, as before, and mirrored to `state.json` at the repo root, so every browser on this machine shows the same ones. On page load the server's copy replaces the browser's. When there is no `state.json` yet, the first browser to load uploads its localStorage. If the server isn't reachable, the page uses localStorage alone. `state.json` is git-ignored. To start over, stop the server, delete `state.json`, and clear this site's data in every browser you use. Otherwise the first browser to load uploads its old selections again.
+
 ## Architecture
 
 - **Backend**: Node.js HTTP server with timeline data processing
 - **Frontend**: Vanilla TypeScript with custom web components, compiled to `dist/frontend.js`
 - **Language**: TypeScript (strict); `npm run build` compiles to `dist/`, `npm test` type-checks and runs Vitest
-- **Data Storage**: Browser localStorage for preferences and manual date adjustments
+- **Data Storage**: Browser localStorage for preferences and manual date adjustments, mirrored to a local `state.json`
 - **Calendar**: Custom interactive calendar renderer with click/double-click functionality
 
 ## Privacy
 
 - Timeline data files (`timeline*.json`) are automatically excluded from git
 - No data is sent to external servers - all processing happens locally
-- Manual date adjustments are stored only in your browser's localStorage
+- Manual date adjustments are stored in your browser's localStorage and in the git-ignored `state.json` on your machine
 
 ## Contributing
 

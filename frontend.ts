@@ -1,4 +1,71 @@
-import type { AnalysisResult, ErrorResponse, UploadResult } from './types';
+import type { AnalysisResult, ErrorResponse, SavedState, StateKey, UploadResult } from './types';
+
+// --- Server-saved state ---
+// localStorage stays the in-page store. These mirror it to state.json on the local server
+// so every browser on this machine sees the same selections.
+const SHARED_KEYS: StateKey[] = ['startDate', 'startTime', 'endDate', 'endTime', 'placeId', 'excludedDates', 'manualVisitedDates'];
+
+// Send only the changed keys; the server merges them (per-key last write wins).
+// One PATCH at a time, in order, so this page's last edit is saved last. keepalive lets a sent
+// PATCH finish if the page closes. Failures are ignored: localStorage still has the value.
+// ponytail: an edit still queued behind another when the page closes is lost; on localhost the queue drains in milliseconds.
+let saving: Promise<unknown> = Promise.resolve();
+function pushState(values: SavedState) {
+    saving = saving.then(() => fetch('/state', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+        keepalive: true
+    })).catch(err => console.warn('Could not save state to server:', err));
+    return saving;
+}
+
+// Save selections to localStorage and the server.
+function saveSettings(values: SavedState) {
+    for (const [key, value] of Object.entries(values)) localStorage.setItem(key, value);
+    pushState(values);
+}
+
+const snapshotState = () => new Map(SHARED_KEYS.map(key => [key, localStorage.getItem(key)]));
+
+// Adopt the server's selections as a whole: drop shared keys it doesn't have.
+// Keys edited on this page since `before` are kept: that edit's PATCH is newer than this reply.
+function adoptState(server: SavedState, before: Map<StateKey, string | null>) {
+    for (const key of SHARED_KEYS) {
+        if (localStorage.getItem(key) !== before.get(key)) continue;
+        const value = server[key];
+        if (value === undefined) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+    }
+}
+
+// Copy the server's saved selections into localStorage before anything reads it.
+// If the server has none yet, upload this browser's (one-time migration).
+// If the server is unreachable, localStorage is used as before.
+async function loadServerState() {
+    const before = snapshotState();
+    try {
+        const response = await fetch('/state');
+        if (!response.ok) return;
+        const server: SavedState = await response.json();
+        if (Object.keys(server).length > 0) return adoptState(server, before);
+        const local: SavedState = {};
+        for (const key of SHARED_KEYS) {
+            const value = localStorage.getItem(key);
+            if (value !== null) local[key] = value;
+        }
+        if (Object.keys(local).length === 0) return;
+        // ifEmpty: if another browser migrated first, the server keeps its state and returns it, and we adopt that.
+        const migrated = await fetch('/state?ifEmpty=1', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(local)
+        });
+        if (migrated.ok) adoptState(await migrated.json(), before);
+    } catch (err) {
+        console.warn('Could not load state from server:', err);
+    }
+}
 
 // --- Custom Web Component: DateRangePicker ---
 // This component provides a reusable date and time input pair for start and end dates.
@@ -111,6 +178,27 @@ class DateRangePicker extends HTMLElement {
 
     // Lifecycle callback: Called when the element is inserted into the DOM.
     connectedCallback() {
+        this.loadSavedDates();
+
+        // Add event listeners to save changes to local storage
+        this.startDateInput.addEventListener('change', () => this.saveDateInput('startDate', this.startDateInput));
+        this.startTimeInput.addEventListener('change', () => this.saveDateInput('startTime', this.startTimeInput));
+        this.endDateInput.addEventListener('change', () => this.saveDateInput('endDate', this.endDateInput));
+        this.endTimeInput.addEventListener('change', () => this.saveDateInput('endTime', this.endTimeInput));
+    }
+
+    // Save only the input that changed, so another browser's edits to the other fields survive.
+    // The range only reloads when all four are saved (non-empty), so until then each save writes all four.
+    saveDateInput(key: StateKey, input: HTMLInputElement) {
+        if (['startDate', 'startTime', 'endDate', 'endTime'].some(k => !localStorage.getItem(k))) {
+            this.saveDatesToLocalStorage();
+        } else {
+            saveSettings({ [key]: input.value });
+        }
+    }
+
+    // Fill the inputs from local storage, or default to the last 30 days if nothing is saved
+    loadSavedDates() {
         // Try to load saved dates from local storage
         const savedStartDate = localStorage.getItem('startDate');
         const savedStartTime = localStorage.getItem('startTime');
@@ -129,22 +217,20 @@ class DateRangePicker extends HTMLElement {
             pastDate.setDate(today.getDate() - 30); // Default to 30 days ago for start date
 
             this.startDateInput.value = this.formatDateForInput(pastDate);
+            this.startTimeInput.value = '00:00';
             this.endDateInput.value = this.formatDateForInput(today);
+            this.endTimeInput.value = '23:59';
         }
-
-        // Add event listeners to save changes to local storage
-        this.startDateInput.addEventListener('change', () => this.saveDatesToLocalStorage());
-        this.startTimeInput.addEventListener('change', () => this.saveDatesToLocalStorage());
-        this.endDateInput.addEventListener('change', () => this.saveDatesToLocalStorage());
-        this.endTimeInput.addEventListener('change', () => this.saveDatesToLocalStorage());
     }
 
-    // Method to save the current date and time selections to local storage
+    // Method to save the current date and time selections to local storage (and the server)
     saveDatesToLocalStorage() {
-        localStorage.setItem('startDate', this.startDateInput.value);
-        localStorage.setItem('startTime', this.startTimeInput.value);
-        localStorage.setItem('endDate', this.endDateInput.value);
-        localStorage.setItem('endTime', this.endTimeInput.value);
+        saveSettings({
+            startDate: this.startDateInput.value,
+            startTime: this.startTimeInput.value,
+            endDate: this.endDateInput.value,
+            endTime: this.endTimeInput.value
+        });
     }
 
     // Method to set dates programmatically (e.g., for "Last 90 Days" button)
@@ -347,7 +433,7 @@ class CalendarRenderer {
                 // Ensure it's removed from excludedDates if it somehow got there
                 if (this.excludedDates.has(dateString)) {
                     this.excludedDates.delete(dateString);
-                    localStorage.setItem('excludedDates', JSON.stringify(Array.from(this.excludedDates)));
+                    saveSettings({ excludedDates: JSON.stringify(Array.from(this.excludedDates)) });
                 }
             } else if (isExcluded && isVisitedFromBackend) {
                 // If a day is excluded but also visited from backend, prioritize visited visually
@@ -432,7 +518,7 @@ class CalendarRenderer {
         // If the day is currently manually visited, remove it from manual visited list first
         if (this.manualVisitedDates.has(dateString)) {
             this.manualVisitedDates.delete(dateString);
-            localStorage.setItem('manualVisitedDates', JSON.stringify(Array.from(this.manualVisitedDates)));
+            saveSettings({ manualVisitedDates: JSON.stringify(Array.from(this.manualVisitedDates)) });
             dayElement.classList.remove('manual-visited-day');
             // If it was only manually visited, remove the 'visited-day' class too
             if (!this.visitedDates.has(dateString)) {
@@ -456,7 +542,7 @@ class CalendarRenderer {
             dayElement.classList.add('excluded-day');
             dayElement.classList.remove('eligible-working-day'); // Ensure it's removed if it was there
         }
-        localStorage.setItem('excludedDates', JSON.stringify(Array.from(this.excludedDates)));
+        saveSettings({ excludedDates: JSON.stringify(Array.from(this.excludedDates)) });
         
         // Trigger the analysis refresh via the callback
         if (this.onAnalysisRefreshCallback) {
@@ -470,7 +556,7 @@ class CalendarRenderer {
         // If the day is currently excluded, remove it from excluded list first
         if (this.excludedDates.has(dateString)) {
             this.excludedDates.delete(dateString);
-            localStorage.setItem('excludedDates', JSON.stringify(Array.from(this.excludedDates)));
+            saveSettings({ excludedDates: JSON.stringify(Array.from(this.excludedDates)) });
             dayElement.classList.remove('excluded-day');
             // Re-apply eligible-working-day if it was removed due to exclusion and is still eligible
             if (this.eligibleWorkingDates.has(dateString) && !UK_BANK_HOLIDAYS_FRONTEND.has(dateString) &&
@@ -502,7 +588,7 @@ class CalendarRenderer {
                 dayElement.appendChild(indicator);
             }
         }
-        localStorage.setItem('manualVisitedDates', JSON.stringify(Array.from(this.manualVisitedDates)));
+        saveSettings({ manualVisitedDates: JSON.stringify(Array.from(this.manualVisitedDates)) });
         
         // Trigger the analysis refresh via the callback
         if (this.onAnalysisRefreshCallback) {
@@ -527,13 +613,22 @@ class CalendarRenderer {
 
 // --- Main Frontend Logic to interact with the Node.js backend ---
 // This section handles the interaction between the HTML elements and your server.
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // Get references to the HTML elements.
     const placeIdInput = document.getElementById('placeIdInput') as HTMLInputElement;
     const datePicker = document.getElementById('datePicker') as DateRangePicker; // Reference to your custom component
     const analyzeButton = document.getElementById('analyzeButton')!;
     const resultsPre = document.getElementById('results')!;
     const calendarContainer = document.getElementById('calendarContainer')!;
+
+    // Pull shared selections from the server first; the date picker already read localStorage, so re-apply.
+    // The page is inert until then, since most controls aren't wired up yet. Any edit that still
+    // gets through queues its PATCH behind the load, so it can't beat the first-browser upload.
+    document.body.inert = true;
+    saving = loadServerState();
+    await saving;
+    document.body.inert = false;
+    datePicker.loadSavedDates();
 
     // Function to run the analysis, now reusable
     const runAnalysis = async () => {
@@ -610,7 +705,7 @@ Average: ${data.averageVisitsPerWorkingWeek}
 
     // Add event listener to save Place ID changes to local storage
     placeIdInput.addEventListener('change', () => {
-        localStorage.setItem('placeId', placeIdInput.value.trim());
+        saveSettings({ placeId: placeIdInput.value.trim() });
     });
 
 

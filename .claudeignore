@@ -1,6 +1,7 @@
 # Sensitive personal data — never read by Claude
 timeline.json
 timeline.*.json
+state.json
 
 # Dependencies and lock files
 node_modules/

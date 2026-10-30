@@ -224,16 +224,32 @@ describe('CalendarRenderer interactions', () => {
         vi.advanceTimersByTime(200);
     };
 
+    let fetchMock: Mock;
+
     beforeEach(() => {
         vi.useFakeTimers();
         logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
         localStorage.clear();
         document.body.innerHTML = '<div id="cal"></div>';
+        fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+        vi.stubGlobal('fetch', fetchMock);
     });
 
     afterEach(() => {
         logSpy.mockRestore();
         vi.useRealTimers();
+        vi.unstubAllGlobals();
+    });
+
+    it('writes toggled dates through to the server as well as localStorage', async () => {
+        setup();
+        click(day(15));
+        expect(stored('excludedDates')).toEqual(['2024-01-15']);
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/state', expect.objectContaining({
+            method: 'PATCH',
+            body: JSON.stringify({ excludedDates: '["2024-01-15"]' }),
+            keepalive: true,
+        })));
     });
 
     it('renders eligible, visited, weekend and bank holiday classes', () => {
@@ -377,5 +393,212 @@ describe('CalendarRenderer.changeMonth', () => {
         expect(seen[7]).toBe('February 2026');
         r.changeMonth(1);
         expect(shown(r)).toBe('March 2026');
+    });
+});
+
+describe('server-saved state on page load', () => {
+    const DOM = `
+        <input type="text" id="placeIdInput" value="">
+        <date-range-picker id="datePicker"></date-range-picker>
+        <button id="analyzeButton">Analyze</button>
+        <button id="last90DaysButton">Last 90 Days</button>
+        <pre id="results"></pre>
+        <button id="todayButton">Today</button>
+        <div id="calendarContainer"></div>
+    `;
+    let fetchMock: Mock, warnSpy: MockInstance;
+
+    // GET /state answers with `state` (or rejects if null). PATCH answers with `patched`,
+    // or echoes its body (as the server would when it was empty). /analyze fails harmlessly.
+    function server(state: Record<string, string> | null, patched?: Record<string, string>) {
+        fetchMock = vi.fn(async (url: string, opts?: RequestInit) => {
+            if (url === '/state' && !opts) {
+                if (!state) throw new TypeError('Failed to fetch');
+                return { ok: true, json: async () => state };
+            }
+            if (url.startsWith('/state')) return { ok: true, json: async () => patched ?? JSON.parse(opts!.body as string) };
+            return { ok: false, json: async () => ({ error: 'no timeline' }) };
+        });
+        vi.stubGlobal('fetch', fetchMock);
+    }
+    const patches = () => fetchMock.mock.calls
+        .filter(([url, opts]) => url.startsWith('/state') && opts?.method === 'PATCH')
+        .map(([url, opts]) => ({ url, body: JSON.parse(opts.body) }));
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    async function load() {
+        document.body.innerHTML = DOM;
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+        await tick();
+    }
+    const change = async (input: HTMLInputElement, value: string) => {
+        input.value = value;
+        input.dispatchEvent(new Event('change'));
+        await tick();
+    };
+    const picker = () => document.getElementById('datePicker') as DateRangePicker;
+    const placeId = () => (document.getElementById('placeIdInput') as HTMLInputElement).value;
+
+    beforeEach(() => {
+        localStorage.clear();
+        warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => {
+        warnSpy.mockRestore();
+        vi.unstubAllGlobals();
+    });
+
+    it('adopts the server state over this browser\'s localStorage without writing back', async () => {
+        localStorage.setItem('placeId', 'local-place');
+        localStorage.setItem('excludedDates', '["2024-01-01"]');
+        server({
+            placeId: 'server-place', excludedDates: '["2024-01-17"]',
+            startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00',
+        });
+        await load();
+        expect(placeId()).toBe('server-place');
+        expect(localStorage.getItem('excludedDates')).toBe('["2024-01-17"]');
+        expect(picker().startDateInput.value).toBe('2024-02-01');
+        expect(picker().endTimeInput.value).toBe('18:00');
+        expect(patches()).toEqual([]);
+    });
+
+    it('resets both times to the defaults when the server has no date range', async () => {
+        for (const [k, v] of Object.entries({ startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' })) {
+            localStorage.setItem(k, v);
+        }
+        server({ placeId: 'server-place' });
+        await load();
+        expect(picker().startTimeInput.value).toBe('00:00');
+        expect(picker().endTimeInput.value).toBe('23:59');
+    });
+
+    it('uploads this browser\'s localStorage when the server has no state yet', async () => {
+        localStorage.setItem('placeId', 'local-place');
+        localStorage.setItem('manualVisitedDates', '["2024-01-18"]');
+        server({});
+        await load();
+        expect(patches()).toEqual([{ url: '/state?ifEmpty=1', body: { placeId: 'local-place', manualVisitedDates: '["2024-01-18"]' } }]);
+        expect(placeId()).toBe('local-place');
+    });
+
+    it('adopts the other browser\'s state if it migrated first', async () => {
+        localStorage.setItem('placeId', 'local-place');
+        localStorage.setItem('manualVisitedDates', '["2024-01-18"]');
+        server({}, { placeId: 'first-browser' });
+        await load();
+        expect(placeId()).toBe('first-browser');
+        expect(localStorage.getItem('manualVisitedDates')).toBeNull();
+    });
+
+    it('drops shared keys the server does not have, so every browser shows the same state', async () => {
+        localStorage.setItem('excludedDates', '["2024-01-01"]');
+        localStorage.setItem('manualVisitedDates', '["2024-01-02"]');
+        server({ placeId: 'server-place' });
+        await load();
+        expect(localStorage.getItem('excludedDates')).toBeNull();
+        expect(localStorage.getItem('manualVisitedDates')).toBeNull();
+        expect(placeId()).toBe('server-place');
+    });
+
+    it('saves only the changed date input once the range is saved', async () => {
+        server({ startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' });
+        await load();
+        await change(picker().startTimeInput, '09:00');
+        expect(patches().map(p => p.body)).toEqual([{ startTime: '09:00' }]);
+    });
+
+    it('saves the whole date range on the first change if it was never saved', async () => {
+        server({ placeId: 'server-place' });
+        await load();
+        await change(picker().startTimeInput, '09:00');
+        expect(patches().map(p => p.body)).toEqual([{
+            startDate: picker().startDateInput.value, startTime: '09:00',
+            endDate: picker().endDateInput.value, endTime: picker().endTimeInput.value,
+        }]);
+    });
+
+    it('treats an empty saved date field as unsaved and saves the whole range', async () => {
+        server({ startDate: '', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' });
+        await load();
+        await change(picker().endTimeInput, '17:00');
+        expect(patches().map(p => p.body)).toEqual([{
+            startDate: picker().startDateInput.value, startTime: '00:00', endDate: picker().endDateInput.value, endTime: '17:00',
+        }]);
+        expect(picker().startDateInput.value).not.toBe('');
+    });
+
+    it('sends one PATCH at a time, in the order the edits were made', async () => {
+        server({ placeId: 'server-place' });
+        await load();
+        let release!: () => void;
+        fetchMock.mockImplementationOnce(() => new Promise(r => { release = () => r({ ok: true, json: async () => ({}) }); }));
+        const input = document.getElementById('placeIdInput') as HTMLInputElement;
+        await change(input, 'first');
+        await change(input, 'second');
+        expect(patches().map(p => p.body)).toEqual([{ placeId: 'first' }]);
+        release();
+        await tick();
+        expect(patches().map(p => p.body)).toEqual([{ placeId: 'first' }, { placeId: 'second' }]);
+    });
+
+    it('keeps a date edited while the initial load is in flight', async () => {
+        for (const [k, v] of Object.entries({ startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' })) {
+            localStorage.setItem(k, v);
+        }
+        let release!: () => void;
+        fetchMock = vi.fn(async (url: string, opts?: RequestInit) => {
+            if (url === '/state' && !opts) {
+                await new Promise<void>(r => { release = r; });
+                return { ok: true, json: async () => ({ startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' }) };
+            }
+            return { ok: url.startsWith('/state'), json: async () => ({}) };
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        document.body.innerHTML = DOM;
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+        await change(picker().startTimeInput, '09:00');
+        release();
+        await tick();
+        expect(picker().startTimeInput.value).toBe('09:00');
+        expect(localStorage.getItem('startTime')).toBe('09:00');
+    });
+
+    it('holds edits made during load until the first-browser upload is done', async () => {
+        for (const [k, v] of Object.entries({
+            startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00', excludedDates: '["2024-02-05"]',
+        })) localStorage.setItem(k, v);
+        let release!: () => void;
+        server({});
+        const echo = fetchMock.getMockImplementation()!;
+        fetchMock.mockImplementationOnce(async (url: string) => {
+            await new Promise<void>(r => { release = r; });
+            return echo(url);
+        });
+        document.body.innerHTML = DOM;
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+        expect(document.body.inert).toBe(true);
+        await change(picker().startTimeInput, '09:00');
+        expect(patches()).toEqual([]);
+        release();
+        await tick();
+        expect(document.body.inert).toBe(false);
+        expect(patches().map(p => p.url)).toEqual(['/state?ifEmpty=1', '/state']);
+        expect(patches()[0].body).toMatchObject({ startTime: '09:00', excludedDates: '["2024-02-05"]' });
+        expect(localStorage.getItem('excludedDates')).toBe('["2024-02-05"]');
+    });
+
+    it('falls back to localStorage when the server is unreachable', async () => {
+        localStorage.setItem('placeId', 'local-place');
+        server(null);
+        await load();
+        expect(placeId()).toBe('local-place');
+    });
+
+    it('writes a changed Place ID through to the server', async () => {
+        server({ placeId: 'server-place' });
+        await load();
+        await change(document.getElementById('placeIdInput') as HTMLInputElement, ' new-place ');
+        expect(localStorage.getItem('placeId')).toBe('new-place');
+        expect(patches().map(p => p.body)).toEqual([{ placeId: 'new-place' }]);
     });
 });
