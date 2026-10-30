@@ -6,13 +6,18 @@ import type { AnalysisResult, ErrorResponse, SavedState, StateKey, UploadResult 
 const SHARED_KEYS: StateKey[] = ['startDate', 'startTime', 'endDate', 'endTime', 'placeId', 'excludedDates', 'manualVisitedDates'];
 
 // Send only the changed keys; the server merges them (per-key last write wins).
-// Failures are ignored: localStorage still has the value.
+// One PATCH at a time, in order, so this page's last edit is saved last. keepalive lets a sent
+// PATCH finish if the page closes. Failures are ignored: localStorage still has the value.
+// ponytail: an edit still queued behind another when the page closes is lost; on localhost the queue drains in milliseconds.
+let saving: Promise<unknown> = Promise.resolve();
 function pushState(values: SavedState) {
-    return fetch('/state', {
+    saving = saving.then(() => fetch('/state', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values)
-    }).catch(err => console.warn('Could not save state to server:', err));
+        body: JSON.stringify(values),
+        keepalive: true
+    })).catch(err => console.warn('Could not save state to server:', err));
+    return saving;
 }
 
 // Save selections to localStorage and the server.
@@ -21,9 +26,13 @@ function saveSettings(values: SavedState) {
     pushState(values);
 }
 
+const snapshotState = () => new Map(SHARED_KEYS.map(key => [key, localStorage.getItem(key)]));
+
 // Adopt the server's selections as a whole: drop shared keys it doesn't have.
-function adoptState(server: SavedState) {
+// Keys edited on this page since `before` are kept: that edit's PATCH is newer than this reply.
+function adoptState(server: SavedState, before: Map<StateKey, string | null>) {
     for (const key of SHARED_KEYS) {
+        if (localStorage.getItem(key) !== before.get(key)) continue;
         const value = server[key];
         if (value === undefined) localStorage.removeItem(key);
         else localStorage.setItem(key, value);
@@ -34,11 +43,12 @@ function adoptState(server: SavedState) {
 // If the server has none yet, upload this browser's (one-time migration).
 // If the server is unreachable, localStorage is used as before.
 async function loadServerState() {
+    const before = snapshotState();
     try {
         const response = await fetch('/state');
         if (!response.ok) return;
         const server: SavedState = await response.json();
-        if (Object.keys(server).length > 0) return adoptState(server);
+        if (Object.keys(server).length > 0) return adoptState(server, before);
         const local: SavedState = {};
         for (const key of SHARED_KEYS) {
             const value = localStorage.getItem(key);
@@ -51,7 +61,7 @@ async function loadServerState() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(local)
         });
-        if (migrated.ok) adoptState(await migrated.json());
+        if (migrated.ok) adoptState(await migrated.json(), before);
     } catch (err) {
         console.warn('Could not load state from server:', err);
     }
@@ -178,9 +188,9 @@ class DateRangePicker extends HTMLElement {
     }
 
     // Save only the input that changed, so another browser's edits to the other fields survive.
-    // The range only reloads when all four are saved, so the first save writes all four.
+    // The range only reloads when all four are saved (non-empty), so until then each save writes all four.
     saveDateInput(key: StateKey, input: HTMLInputElement) {
-        if (['startDate', 'startTime', 'endDate', 'endTime'].some(k => localStorage.getItem(k) === null)) {
+        if (['startDate', 'startTime', 'endDate', 'endTime'].some(k => !localStorage.getItem(k))) {
             this.saveDatesToLocalStorage();
         } else {
             saveSettings({ [key]: input.value });

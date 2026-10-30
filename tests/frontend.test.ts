@@ -241,14 +241,15 @@ describe('CalendarRenderer interactions', () => {
         vi.unstubAllGlobals();
     });
 
-    it('writes toggled dates through to the server as well as localStorage', () => {
+    it('writes toggled dates through to the server as well as localStorage', async () => {
         setup();
         click(day(15));
         expect(stored('excludedDates')).toEqual(['2024-01-15']);
-        expect(fetchMock).toHaveBeenCalledWith('/state', expect.objectContaining({
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/state', expect.objectContaining({
             method: 'PATCH',
             body: JSON.stringify({ excludedDates: '["2024-01-15"]' }),
-        }));
+            keepalive: true,
+        })));
     });
 
     it('renders eligible, visited, weekend and bank holiday classes', () => {
@@ -423,11 +424,17 @@ describe('server-saved state on page load', () => {
     const patches = () => fetchMock.mock.calls
         .filter(([url, opts]) => url.startsWith('/state') && opts?.method === 'PATCH')
         .map(([url, opts]) => ({ url, body: JSON.parse(opts.body) }));
+    const tick = () => new Promise(r => setTimeout(r, 0));
     async function load() {
         document.body.innerHTML = DOM;
         document.dispatchEvent(new Event('DOMContentLoaded'));
-        await new Promise(r => setTimeout(r, 0));
+        await tick();
     }
+    const change = async (input: HTMLInputElement, value: string) => {
+        input.value = value;
+        input.dispatchEvent(new Event('change'));
+        await tick();
+    };
     const picker = () => document.getElementById('datePicker') as DateRangePicker;
     const placeId = () => (document.getElementById('placeIdInput') as HTMLInputElement).value;
 
@@ -496,20 +503,64 @@ describe('server-saved state on page load', () => {
     it('saves only the changed date input once the range is saved', async () => {
         server({ startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' });
         await load();
-        picker().startTimeInput.value = '09:00';
-        picker().startTimeInput.dispatchEvent(new Event('change'));
+        await change(picker().startTimeInput, '09:00');
         expect(patches().map(p => p.body)).toEqual([{ startTime: '09:00' }]);
     });
 
     it('saves the whole date range on the first change if it was never saved', async () => {
         server({ placeId: 'server-place' });
         await load();
-        picker().startTimeInput.value = '09:00';
-        picker().startTimeInput.dispatchEvent(new Event('change'));
+        await change(picker().startTimeInput, '09:00');
         expect(patches().map(p => p.body)).toEqual([{
             startDate: picker().startDateInput.value, startTime: '09:00',
             endDate: picker().endDateInput.value, endTime: picker().endTimeInput.value,
         }]);
+    });
+
+    it('treats an empty saved date field as unsaved and saves the whole range', async () => {
+        server({ startDate: '', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' });
+        await load();
+        await change(picker().endTimeInput, '17:00');
+        expect(patches().map(p => p.body)).toEqual([{
+            startDate: picker().startDateInput.value, startTime: '00:00', endDate: picker().endDateInput.value, endTime: '17:00',
+        }]);
+        expect(picker().startDateInput.value).not.toBe('');
+    });
+
+    it('sends one PATCH at a time, in the order the edits were made', async () => {
+        server({ placeId: 'server-place' });
+        await load();
+        let release!: () => void;
+        fetchMock.mockImplementationOnce(() => new Promise(r => { release = () => r({ ok: true, json: async () => ({}) }); }));
+        const input = document.getElementById('placeIdInput') as HTMLInputElement;
+        await change(input, 'first');
+        await change(input, 'second');
+        expect(patches().map(p => p.body)).toEqual([{ placeId: 'first' }]);
+        release();
+        await tick();
+        expect(patches().map(p => p.body)).toEqual([{ placeId: 'first' }, { placeId: 'second' }]);
+    });
+
+    it('keeps a date edited while the initial load is in flight', async () => {
+        for (const [k, v] of Object.entries({ startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' })) {
+            localStorage.setItem(k, v);
+        }
+        let release!: () => void;
+        fetchMock = vi.fn(async (url: string, opts?: RequestInit) => {
+            if (url === '/state' && !opts) {
+                await new Promise<void>(r => { release = r; });
+                return { ok: true, json: async () => ({ startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' }) };
+            }
+            return { ok: url.startsWith('/state'), json: async () => ({}) };
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        document.body.innerHTML = DOM;
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+        await change(picker().startTimeInput, '09:00');
+        release();
+        await tick();
+        expect(picker().startTimeInput.value).toBe('09:00');
+        expect(localStorage.getItem('startTime')).toBe('09:00');
     });
 
     it('falls back to localStorage when the server is unreachable', async () => {
@@ -522,9 +573,7 @@ describe('server-saved state on page load', () => {
     it('writes a changed Place ID through to the server', async () => {
         server({ placeId: 'server-place' });
         await load();
-        const input = document.getElementById('placeIdInput') as HTMLInputElement;
-        input.value = ' new-place ';
-        input.dispatchEvent(new Event('change'));
+        await change(document.getElementById('placeIdInput') as HTMLInputElement, ' new-place ');
         expect(localStorage.getItem('placeId')).toBe('new-place');
         expect(patches().map(p => p.body)).toEqual([{ placeId: 'new-place' }]);
     });
