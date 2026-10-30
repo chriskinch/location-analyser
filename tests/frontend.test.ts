@@ -407,20 +407,22 @@ describe('server-saved state on page load', () => {
     `;
     let fetchMock: Mock, warnSpy: MockInstance;
 
-    // GET /state answers with `state` (or rejects if null); PATCH succeeds; /analyze fails harmlessly.
-    function server(state: Record<string, string> | null) {
+    // GET /state answers with `state` (or rejects if null). PATCH answers with `patched`,
+    // or echoes its body (as the server would when it was empty). /analyze fails harmlessly.
+    function server(state: Record<string, string> | null, patched?: Record<string, string>) {
         fetchMock = vi.fn(async (url: string, opts?: RequestInit) => {
             if (url === '/state' && !opts) {
                 if (!state) throw new TypeError('Failed to fetch');
                 return { ok: true, json: async () => state };
             }
-            return { ok: url === '/state', json: async () => ({ error: 'no timeline' }) };
+            if (url.startsWith('/state')) return { ok: true, json: async () => patched ?? JSON.parse(opts!.body as string) };
+            return { ok: false, json: async () => ({ error: 'no timeline' }) };
         });
         vi.stubGlobal('fetch', fetchMock);
     }
     const patches = () => fetchMock.mock.calls
-        .filter(([url, opts]) => url === '/state' && opts?.method === 'PATCH')
-        .map(([, opts]) => JSON.parse(opts.body));
+        .filter(([url, opts]) => url.startsWith('/state') && opts?.method === 'PATCH')
+        .map(([url, opts]) => ({ url, body: JSON.parse(opts.body) }));
     async function load() {
         document.body.innerHTML = DOM;
         document.dispatchEvent(new Event('DOMContentLoaded'));
@@ -453,13 +455,32 @@ describe('server-saved state on page load', () => {
         expect(patches()).toEqual([]);
     });
 
+    it('resets both times to the defaults when the server has no date range', async () => {
+        for (const [k, v] of Object.entries({ startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' })) {
+            localStorage.setItem(k, v);
+        }
+        server({ placeId: 'server-place' });
+        await load();
+        expect(picker().startTimeInput.value).toBe('00:00');
+        expect(picker().endTimeInput.value).toBe('23:59');
+    });
+
     it('uploads this browser\'s localStorage when the server has no state yet', async () => {
         localStorage.setItem('placeId', 'local-place');
         localStorage.setItem('manualVisitedDates', '["2024-01-18"]');
         server({});
         await load();
-        expect(patches()).toEqual([{ placeId: 'local-place', manualVisitedDates: '["2024-01-18"]' }]);
+        expect(patches()).toEqual([{ url: '/state?ifEmpty=1', body: { placeId: 'local-place', manualVisitedDates: '["2024-01-18"]' } }]);
         expect(placeId()).toBe('local-place');
+    });
+
+    it('adopts the other browser\'s state if it migrated first', async () => {
+        localStorage.setItem('placeId', 'local-place');
+        localStorage.setItem('manualVisitedDates', '["2024-01-18"]');
+        server({}, { placeId: 'first-browser' });
+        await load();
+        expect(placeId()).toBe('first-browser');
+        expect(localStorage.getItem('manualVisitedDates')).toBeNull();
     });
 
     it('drops shared keys the server does not have, so every browser shows the same state', async () => {
@@ -477,7 +498,7 @@ describe('server-saved state on page load', () => {
         await load();
         picker().startTimeInput.value = '09:00';
         picker().startTimeInput.dispatchEvent(new Event('change'));
-        expect(patches()).toEqual([{ startTime: '09:00' }]);
+        expect(patches().map(p => p.body)).toEqual([{ startTime: '09:00' }]);
     });
 
     it('saves the whole date range on the first change if it was never saved', async () => {
@@ -485,7 +506,7 @@ describe('server-saved state on page load', () => {
         await load();
         picker().startTimeInput.value = '09:00';
         picker().startTimeInput.dispatchEvent(new Event('change'));
-        expect(patches()).toEqual([{
+        expect(patches().map(p => p.body)).toEqual([{
             startDate: picker().startDateInput.value, startTime: '09:00',
             endDate: picker().endDateInput.value, endTime: picker().endTimeInput.value,
         }]);
@@ -505,6 +526,6 @@ describe('server-saved state on page load', () => {
         input.value = ' new-place ';
         input.dispatchEvent(new Event('change'));
         expect(localStorage.getItem('placeId')).toBe('new-place');
-        expect(patches()).toEqual([{ placeId: 'new-place' }]);
+        expect(patches().map(p => p.body)).toEqual([{ placeId: 'new-place' }]);
     });
 });

@@ -21,6 +21,15 @@ function saveSettings(values: SavedState) {
     pushState(values);
 }
 
+// Adopt the server's selections as a whole: drop shared keys it doesn't have.
+function adoptState(server: SavedState) {
+    for (const key of SHARED_KEYS) {
+        const value = server[key];
+        if (value === undefined) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+    }
+}
+
 // Copy the server's saved selections into localStorage before anything reads it.
 // If the server has none yet, upload this browser's (one-time migration).
 // If the server is unreachable, localStorage is used as before.
@@ -29,21 +38,20 @@ async function loadServerState() {
         const response = await fetch('/state');
         if (!response.ok) return;
         const server: SavedState = await response.json();
-        if (Object.keys(server).length > 0) {
-            // Adopt the server's selections as a whole: drop shared keys it doesn't have.
-            for (const key of SHARED_KEYS) {
-                const value = server[key];
-                if (value === undefined) localStorage.removeItem(key);
-                else localStorage.setItem(key, value);
-            }
-            return;
-        }
+        if (Object.keys(server).length > 0) return adoptState(server);
         const local: SavedState = {};
         for (const key of SHARED_KEYS) {
             const value = localStorage.getItem(key);
             if (value !== null) local[key] = value;
         }
-        if (Object.keys(local).length > 0) await pushState(local);
+        if (Object.keys(local).length === 0) return;
+        // ifEmpty: if another browser migrated first, the server keeps its state and returns it, and we adopt that.
+        const migrated = await fetch('/state?ifEmpty=1', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(local)
+        });
+        if (migrated.ok) adoptState(await migrated.json());
     } catch (err) {
         console.warn('Could not load state from server:', err);
     }
@@ -199,7 +207,9 @@ class DateRangePicker extends HTMLElement {
             pastDate.setDate(today.getDate() - 30); // Default to 30 days ago for start date
 
             this.startDateInput.value = this.formatDateForInput(pastDate);
+            this.startTimeInput.value = '00:00';
             this.endDateInput.value = this.formatDateForInput(today);
+            this.endTimeInput.value = '23:59';
         }
     }
 

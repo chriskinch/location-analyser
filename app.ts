@@ -126,7 +126,8 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // Saved selections: GET returns them ({} if none yet), PATCH merges the keys sent (per-key last write wins)
+    // Saved selections: GET returns them ({} if none yet), PATCH merges the keys sent (per-key last write wins).
+    // PATCH ?ifEmpty=1 writes only if nothing is saved yet, so two browsers migrating at once can't overwrite each other.
     if (reqUrl.pathname === '/state' && (req.method === 'GET' || req.method === 'PATCH')) {
         const send = (status: number, body: unknown) => {
             res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -145,7 +146,9 @@ const server = http.createServer(async (req, res) => {
             }
             const invalid = validateState(body);
             if (invalid) return send(400, { error: invalid });
-            const state = { ...readState(), ...(body as SavedState) };
+            const current = readState();
+            if (reqUrl.query.ifEmpty && Object.keys(current).length > 0) return send(200, current);
+            const state = { ...current, ...(body as SavedState) };
             writeState(state);
             return send(200, state);
         } catch (err) {

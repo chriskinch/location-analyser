@@ -326,3 +326,25 @@ describe('GET/PATCH /state', () => {
         expect(res.headers.get('access-control-allow-origin')).toBeNull();
     });
 });
+
+describe('PATCH /state?ifEmpty=1 (first-browser migration)', () => {
+    let srv: Awaited<ReturnType<typeof startServer>>;
+    beforeAll(async () => { srv = await startServer(); });
+    afterAll(() => srv.stop());
+
+    const migrate = (placeId: string) => fetch(`${srv.base}/state?ifEmpty=1`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ placeId }),
+    }).then(r => r.json());
+
+    it('lets only one of two concurrent migrations write, and returns the winner to both', async () => {
+        const [a, b] = await Promise.all([migrate('browser-a'), migrate('browser-b')]);
+        expect(a).toEqual(b);
+        expect(JSON.parse(fs.readFileSync(path.join(srv.dir, 'state.json'), 'utf8'))).toEqual(a);
+    });
+
+    it('leaves existing state untouched', async () => {
+        const before = fs.readFileSync(path.join(srv.dir, 'state.json'), 'utf8');
+        await migrate('late-browser');
+        expect(fs.readFileSync(path.join(srv.dir, 'state.json'), 'utf8')).toBe(before);
+    });
+});

@@ -101,7 +101,7 @@ Analyzes timeline data for a specific location and date range.
 
 ### GET/PATCH `/state`
 
-Your saved selections (date range, Place ID, excluded and manually visited days). `GET` returns them, or `{}` if nothing is saved yet. `PATCH` merges the keys you send, so the last write wins for each key. Only same-origin requests to `127.0.0.1`/`localhost` are accepted.
+Your saved selections (date range, Place ID, excluded and manually visited days). `GET` returns them, or `{}` if nothing is saved yet. `PATCH` merges the keys you send, so the last write wins for each key. `PATCH /state?ifEmpty=1` writes only if nothing is saved yet; it's used for the first-browser upload, and returns whatever is saved. Only same-origin requests to `127.0.0.1`/`localhost` are accepted.
 
 ## Saved selections (`state.json`)
 
