@@ -30,7 +30,12 @@ async function loadServerState() {
         if (!response.ok) return;
         const server: SavedState = await response.json();
         if (Object.keys(server).length > 0) {
-            for (const [key, value] of Object.entries(server)) localStorage.setItem(key, value);
+            // Adopt the server's selections as a whole: drop shared keys it doesn't have.
+            for (const key of SHARED_KEYS) {
+                const value = server[key];
+                if (value === undefined) localStorage.removeItem(key);
+                else localStorage.setItem(key, value);
+            }
             return;
         }
         const local: SavedState = {};
@@ -158,10 +163,20 @@ class DateRangePicker extends HTMLElement {
         this.loadSavedDates();
 
         // Add event listeners to save changes to local storage
-        this.startDateInput.addEventListener('change', () => this.saveDatesToLocalStorage());
-        this.startTimeInput.addEventListener('change', () => this.saveDatesToLocalStorage());
-        this.endDateInput.addEventListener('change', () => this.saveDatesToLocalStorage());
-        this.endTimeInput.addEventListener('change', () => this.saveDatesToLocalStorage());
+        this.startDateInput.addEventListener('change', () => this.saveDateInput('startDate', this.startDateInput));
+        this.startTimeInput.addEventListener('change', () => this.saveDateInput('startTime', this.startTimeInput));
+        this.endDateInput.addEventListener('change', () => this.saveDateInput('endDate', this.endDateInput));
+        this.endTimeInput.addEventListener('change', () => this.saveDateInput('endTime', this.endTimeInput));
+    }
+
+    // Save only the input that changed, so another browser's edits to the other fields survive.
+    // The range only reloads when all four are saved, so the first save writes all four.
+    saveDateInput(key: StateKey, input: HTMLInputElement) {
+        if (['startDate', 'startTime', 'endDate', 'endTime'].some(k => localStorage.getItem(k) === null)) {
+            this.saveDatesToLocalStorage();
+        } else {
+            saveSettings({ [key]: input.value });
+        }
     }
 
     // Fill the inputs from local storage, or default to the last 30 days if nothing is saved

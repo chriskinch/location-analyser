@@ -462,6 +462,35 @@ describe('server-saved state on page load', () => {
         expect(placeId()).toBe('local-place');
     });
 
+    it('drops shared keys the server does not have, so every browser shows the same state', async () => {
+        localStorage.setItem('excludedDates', '["2024-01-01"]');
+        localStorage.setItem('manualVisitedDates', '["2024-01-02"]');
+        server({ placeId: 'server-place' });
+        await load();
+        expect(localStorage.getItem('excludedDates')).toBeNull();
+        expect(localStorage.getItem('manualVisitedDates')).toBeNull();
+        expect(placeId()).toBe('server-place');
+    });
+
+    it('saves only the changed date input once the range is saved', async () => {
+        server({ startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00' });
+        await load();
+        picker().startTimeInput.value = '09:00';
+        picker().startTimeInput.dispatchEvent(new Event('change'));
+        expect(patches()).toEqual([{ startTime: '09:00' }]);
+    });
+
+    it('saves the whole date range on the first change if it was never saved', async () => {
+        server({ placeId: 'server-place' });
+        await load();
+        picker().startTimeInput.value = '09:00';
+        picker().startTimeInput.dispatchEvent(new Event('change'));
+        expect(patches()).toEqual([{
+            startDate: picker().startDateInput.value, startTime: '09:00',
+            endDate: picker().endDateInput.value, endTime: picker().endTimeInput.value,
+        }]);
+    });
+
     it('falls back to localStorage when the server is unreachable', async () => {
         localStorage.setItem('placeId', 'local-place');
         server(null);
