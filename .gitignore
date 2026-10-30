@@ -62,6 +62,9 @@ timeline.*.json
 # Cached annual leave dates (personal data), filled by the sync-holidays skill
 holidays.json
 
+# Saved selections shared between browsers (personal data)
+state.json
+
 # Temporary files
 *.tmp
 *.temp

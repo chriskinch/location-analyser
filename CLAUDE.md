@@ -140,7 +140,8 @@ These rules govern how Claude Code must behave in this repository. They are not 
 
 ### Auto Merge
 
-- Add the `automerge` label to a PR to have it merge itself (merge commit) once it is ready
+- New PRs from branches in this repo get the `automerge` label automatically and merge themselves (merge commit) once ready. Fork PRs need a writer to add it
+- Keep the label unless there is a reason not to auto-merge, e.g. the PR needs a human review or decision, depends on another PR or a manual step, or is not finished. When you remove it, say why in a PR comment
 - `.github/workflows/auto-merge.yml` arms GitHub auto-merge only on the oldest open PR against `main`, and only once that PR is labelled and Copilot has reviewed its latest commit. It switches auto-merge off on every later PR, so creation order holds
 - The "Merge to main" ruleset holds the merge until the `test` check passes and every review thread is resolved. Resolve each Copilot comment thread to unblock it
 - An unlabelled or failing PR at the front of the line holds up every PR behind it. Fix it, merge it by hand, or close it
