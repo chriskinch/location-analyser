@@ -60,7 +60,7 @@ timeline.*.json
 # ...but keep test fixtures, which are synthetic data committed to the repo
 !tests/fixtures/*.json
 # Cached annual leave dates (personal data), filled by the sync-holidays skill
-holidays.json
+holidays.json*
 
 # Saved selections shared between browsers (personal data)
 state.json
