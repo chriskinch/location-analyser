@@ -61,6 +61,7 @@ Timeline JSON contains `semanticSegments` array with:
 - `timeline.json` - Main data source (Google Takeout timeline data)
 - `timeline.may.json`, `timeline.sep.json` - Alternative/archive data files
 - `archive_browser.html` - Separate archive browsing interface
+- `holidays.json` - Git-ignored, hand-editable cache of annual leave days, auto-excluded in the calendar and served at `GET /holidays`. Filled by the `sync-holidays` skill; never drop entries from it
 
 ### API Endpoint
 
