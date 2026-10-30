@@ -380,16 +380,28 @@ describe('CalendarRenderer interactions', () => {
             withHoliday();
             click(day(17));
             expect(stored('holidayOverrides')).toEqual(['2024-01-17']);
-            expect(stored('excludedDates')).toEqual([]);
+            expect(localStorage.getItem('excludedDates')).toBeNull();
             expect(day(17).classList).not.toContain('excluded-day');
             expect(renderer.getEffectiveExcludedDates()).toEqual([]);
 
             click(day(17));
             expect(stored('holidayOverrides')).toEqual([]);
-            expect(stored('excludedDates')).toEqual([]);
+            expect(localStorage.getItem('excludedDates')).toBeNull();
             expect(day(17).classList).toContain('excluded-day');
             expect(renderer.getEffectiveExcludedDates()).toEqual(['2024-01-17']);
             expect(refresh).toHaveBeenCalledTimes(2);
+        });
+
+        it('clicking a holiday the user also excluded by hand leaves the shared excludedDates alone', () => {
+            localStorage.setItem('excludedDates', JSON.stringify(['2024-01-17']));
+            withHoliday();
+            click(day(17));
+            expect(day(17).classList).not.toContain('excluded-day');
+            expect(renderer.getEffectiveExcludedDates()).toEqual([]);
+            click(day(17));
+            expect(day(17).classList).toContain('excluded-day');
+            expect(stored('excludedDates')).toEqual(['2024-01-17']);
+            expect(renderer.getEffectiveExcludedDates()).toEqual(['2024-01-17']);
         });
 
         it('keeps the override across reloads', () => {
