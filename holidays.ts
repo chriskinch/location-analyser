@@ -92,9 +92,12 @@ async function main([command, rowsPath, days = '90', filePath = HOLIDAYS_FILE]: 
     const rows = JSON.parse(await fs.promises.readFile(rowsPath, 'utf8')) as AbsenceRow[];
     const incoming = absencesToHolidays(rows, londonDay(now, Number(days)), londonDay(now));
     const merged = mergeHolidays(existing, incoming);
-    // Write a temp file and rename it over the cache, so a failed write can't truncate hand-added dates.
-    await fs.promises.writeFile(`${filePath}.tmp`, JSON.stringify(merged, null, 2) + '\n');
-    await fs.promises.rename(`${filePath}.tmp`, filePath);
+    // Write a per-run temp file and rename it over the cache, so a failed write can't truncate hand-added dates.
+    // ponytail: no cross-process lock; two overlapping syncs could drop each other's additions. The skill runs
+    // one sync at a time by hand, so add a lock file if this ever runs on a schedule or in parallel.
+    const tmp = `${filePath}.${process.pid}.tmp`;
+    await fs.promises.writeFile(tmp, JSON.stringify(merged, null, 2) + '\n');
+    await fs.promises.rename(tmp, filePath);
     console.log(`Workday: ${incoming.length} day(s) off in the past ${days} days; added ${merged.length - existing.length}; ${filePath} now holds ${merged.length}.`);
 }
 
