@@ -91,6 +91,20 @@ describe('CalendarRenderer.formatDateToYYYYMMDD', () => {
     });
 });
 
+describe('CalendarRenderer.goToToday', () => {
+    it('returns the calendar to the current month', () => {
+        document.body.innerHTML = '<div id="cal"></div>';
+        const renderer = new CalendarRenderer('cal', null);
+        renderer.changeMonth(-3);
+        renderer.goToToday();
+        const now = new Date();
+        expect(renderer.currentMonth.getFullYear()).toBe(now.getFullYear());
+        expect(renderer.currentMonth.getMonth()).toBe(now.getMonth());
+        expect(document.querySelector('.calendar-header h3')!.textContent)
+            .toBe(now.toLocaleString('default', { month: 'long', year: 'numeric' }));
+    });
+});
+
 describe('DateRangePicker.formatDateForInput', () => {
     let picker: DateRangePicker;
 
@@ -128,6 +142,7 @@ describe('timeline file upload handler', () => {
         <button id="analyzeButton">Analyze</button>
         <button id="last90DaysButton">Last 90 Days</button>
         <pre id="results"></pre>
+        <button id="todayButton">Today</button>
         <div id="calendarContainer"></div>
     `;
 
@@ -392,5 +407,35 @@ describe('CalendarRenderer interactions', () => {
         document.querySelector<HTMLElement>('#prevMonth')!.click();
         expect(document.querySelector('#cal h3')!.textContent).toMatch(/January/);
         expect(day(15).classList).toContain('excluded-day');
+    });
+});
+
+describe('CalendarRenderer.changeMonth', () => {
+    const shown = (r: CalendarRenderer) => r.currentMonth.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        document.body.innerHTML = '<div id="cal"></div>';
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('never skips a short month stepping back from the 31st', () => {
+        vi.setSystemTime(new Date(2026, 9, 31)); // 31 Oct 2026
+        const r = new CalendarRenderer('cal', null);
+        const seen: string[] = [];
+        for (let i = 0; i < 3; i++) { r.changeMonth(-1); seen.push(shown(r)); }
+        expect(seen).toEqual(['September 2026', 'August 2026', 'July 2026']);
+        for (let i = 0; i < 3; i++) { r.changeMonth(1); seen.push(shown(r)); }
+        expect(seen.slice(3)).toEqual(['August 2026', 'September 2026', 'October 2026']);
+    });
+
+    it('lands on February, not March, from the 29th', () => {
+        vi.setSystemTime(new Date(2026, 9, 29)); // 29 Oct 2026
+        const r = new CalendarRenderer('cal', null);
+        const seen: string[] = [];
+        for (let i = 0; i < 8; i++) { r.changeMonth(-1); seen.push(shown(r)); }
+        expect(seen[7]).toBe('February 2026');
+        r.changeMonth(1);
+        expect(shown(r)).toBe('March 2026');
     });
 });

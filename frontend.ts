@@ -234,7 +234,8 @@ class CalendarRenderer {
     constructor(containerId: string, onAnalysisRefreshCallback: (() => void) | null) { // Renamed callback for clarity
         this.container = document.getElementById(containerId)!;
         this.onAnalysisRefreshCallback = onAnalysisRefreshCallback; // Store the callback
-        this.currentMonth = new Date(); // Start with the current month for display
+        const now = new Date();
+        this.currentMonth = new Date(now.getFullYear(), now.getMonth(), 1); // Current month, pinned to the 1st so changeMonth can't overflow
         this.visitedDates = new Set<string>(); // Stores 'YYYY-MM-DD' strings of visited days (from backend)
         this.eligibleWorkingDates = new Set<string>(); // Stores 'YYYY-MM-DD' strings of eligible working days (from backend)
         this.analysisStartDate = null; // To store the analysis period start date
@@ -534,8 +535,14 @@ class CalendarRenderer {
 
     // Changes the displayed month by the given offset (-1 for previous, 1 for next).
     changeMonth(offset: number) {
-        this.currentMonth.setMonth(this.currentMonth.getMonth() + offset);
+        this.currentMonth = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth() + offset, 1);
         this.render(); // Re-render the calendar for the new month
+    }
+
+    // Jumps the calendar back to the current month.
+    goToToday() {
+        this.currentMonth = new Date();
+        this.render();
     }
 }
 
@@ -631,6 +638,9 @@ Average: ${data.averageVisitsPerWorkingWeek}
 
     // Add an event listener to the "Analyze Visits" button.
     analyzeButton.addEventListener('click', runAnalysis); // Direct call for button click
+
+    // Add an event listener to the "Today" button next to the calendar title.
+    document.getElementById('todayButton')!.addEventListener('click', () => calendar.goToToday());
 
     // Add an event listener to the "Last 90 Days" button.
     const last90DaysButton = document.getElementById('last90DaysButton')!;
