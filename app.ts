@@ -3,6 +3,7 @@ import fs from 'fs';
 import url from 'url';
 import path from 'path';
 import { analyzeTimelineData } from './analyzer';
+import { readHolidayEntries, holidayDates } from './holidays';
 import type { TimelineData } from './types';
 
 // Compiled to dist/; HTML pages and timeline.json live at the repo root.
@@ -104,6 +105,20 @@ const server = http.createServer(async (req, res) => {
             console.error("Analysis error:", error);
             res.statusCode = 500;
             res.end(JSON.stringify({ error: (error as Error).message || 'An error occurred during analysis.' }));
+        }
+        return;
+    }
+
+    // Cached annual leave dates from holidays.json; [] when the file is missing or empty
+    if (reqUrl.pathname === '/holidays' && req.method === 'GET') {
+        res.setHeader('Content-Type', 'application/json');
+        try {
+            res.statusCode = 200;
+            res.end(JSON.stringify(holidayDates(await readHolidayEntries())));
+        } catch (error) {
+            console.error("Holidays error:", error);
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: `Failed to read holidays.json: ${(error as Error).message}` }));
         }
         return;
     }
