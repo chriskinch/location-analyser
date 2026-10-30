@@ -105,7 +105,7 @@ Your saved selections (date range, Place ID, excluded and manually visited days)
 
 ## Saved selections (`state.json`)
 
-Selections are kept in the browser's localStorage, as before, and mirrored to `state.json` at the repo root, so every browser on this machine shows the same ones. On page load the server's copy replaces the browser's. When there is no `state.json` yet, the first browser to load uploads its localStorage. If the server isn't reachable, the page uses localStorage alone. `state.json` is git-ignored. Delete it to start over.
+Selections are kept in the browser's localStorage, as before, and mirrored to `state.json` at the repo root, so every browser on this machine shows the same ones. On page load the server's copy replaces the browser's. When there is no `state.json` yet, the first browser to load uploads its localStorage. If the server isn't reachable, the page uses localStorage alone. `state.json` is git-ignored. To start over, stop the server, delete `state.json`, and clear this site's data in every browser you use. Otherwise the first browser to load uploads its old selections again.
 
 ## Architecture
 
