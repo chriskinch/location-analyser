@@ -576,10 +576,12 @@ describe('server-saved state on page load', () => {
         });
         document.body.innerHTML = DOM;
         document.dispatchEvent(new Event('DOMContentLoaded'));
+        expect(document.body.inert).toBe(true);
         await change(picker().startTimeInput, '09:00');
         expect(patches()).toEqual([]);
         release();
         await tick();
+        expect(document.body.inert).toBe(false);
         expect(patches().map(p => p.url)).toEqual(['/state?ifEmpty=1', '/state']);
         expect(patches()[0].body).toMatchObject({ startTime: '09:00', excludedDates: '["2024-02-05"]' });
         expect(localStorage.getItem('excludedDates')).toBe('["2024-02-05"]');
