@@ -227,6 +227,8 @@ class CalendarRenderer {
     analysisEndDate: Date | null;
     excludedDates: Set<string>;
     manualVisitedDates: Set<string>;
+    holidayDates: Set<string> = new Set<string>(); // Annual leave from holidays.json, auto-excluded
+    holidayOverrides: Set<string>; // Holiday dates the user clicked back to eligible in this browser
     clickTimeout: ReturnType<typeof setTimeout> | null = null;
 
     constructor(containerId: string, onAnalysisRefreshCallback: (() => void) | null) { // Renamed callback for clarity
@@ -249,8 +251,19 @@ class CalendarRenderer {
         if (savedManualVisitedDates) {
             this.manualVisitedDates = new Set(JSON.parse(savedManualVisitedDates)); // NEW
         }
+        this.holidayOverrides = new Set(JSON.parse(localStorage.getItem('holidayOverrides') || '[]'));
 
         this.render(); // Initial render of an empty calendar
+    }
+
+    // A holidays.json day counts as excluded unless overridden here or manually marked visited.
+    isHolidayExcluded(dateString: string) {
+        return this.holidayDates.has(dateString) && !this.holidayOverrides.has(dateString) && !this.manualVisitedDates.has(dateString);
+    }
+
+    // Dates sent to /analyze as excludedDates: the user's own exclusions plus cached holidays.
+    getEffectiveExcludedDates() {
+        return [...new Set([...this.excludedDates, ...[...this.holidayDates].filter(d => this.isHolidayExcluded(d))])];
     }
 
     // Method to update the calendar with new data from the backend.
@@ -334,7 +347,7 @@ class CalendarRenderer {
             const dateString = this.formatDateToYYYYMMDD(date);
             const isVisitedFromBackend = this.visitedDates.has(dateString); // Visited from timeline.json
             let isManualVisited = this.manualVisitedDates.has(dateString); // Manually marked visited
-            let isExcluded = this.excludedDates.has(dateString); // Manually excluded from eligible working days
+            let isExcluded = this.excludedDates.has(dateString) || this.isHolidayExcluded(dateString); // Excluded by the user or by holidays.json
 
             const isWeekend = date.getDay() === 0 || date.getDay() === 6; // Sunday or Saturday
             const isBankHoliday = UK_BANK_HOLIDAYS_FRONTEND.has(dateString); // Check against frontend bank holiday list
@@ -428,6 +441,10 @@ class CalendarRenderer {
 
     // Toggle exclusion state for a day (from eligible working days)
     toggleExcludeDay(dateString: string, dayElement: HTMLElement) {
+        // Read before the manual-visited reset below, which would otherwise re-expose a holiday's exclusion.
+        const isHoliday = this.holidayDates.has(dateString);
+        const wasExcluded = this.excludedDates.has(dateString) || this.isHolidayExcluded(dateString);
+
         // If the day is currently manually visited, remove it from manual visited list first
         if (this.manualVisitedDates.has(dateString)) {
             this.manualVisitedDates.delete(dateString);
@@ -441,9 +458,10 @@ class CalendarRenderer {
             }
         }
 
-        // Now toggle exclusion
-        if (this.excludedDates.has(dateString)) {
+        // Now toggle exclusion. A holidays.json day is toggled via holidayOverrides; the file is never changed.
+        if (wasExcluded) {
             this.excludedDates.delete(dateString);
+            if (isHoliday) this.holidayOverrides.add(dateString);
             dayElement.classList.remove('excluded-day');
             // Re-apply eligible-working-day if it was removed due to exclusion and is still eligible
             if (this.eligibleWorkingDates.has(dateString) && !UK_BANK_HOLIDAYS_FRONTEND.has(dateString) &&
@@ -451,11 +469,13 @@ class CalendarRenderer {
                 dayElement.classList.add('eligible-working-day');
             }
         } else {
-            this.excludedDates.add(dateString);
+            if (isHoliday) this.holidayOverrides.delete(dateString);
+            else this.excludedDates.add(dateString);
             dayElement.classList.add('excluded-day');
             dayElement.classList.remove('eligible-working-day'); // Ensure it's removed if it was there
         }
         localStorage.setItem('excludedDates', JSON.stringify(Array.from(this.excludedDates)));
+        if (isHoliday) localStorage.setItem('holidayOverrides', JSON.stringify(Array.from(this.holidayOverrides)));
         
         // Trigger the analysis refresh via the callback
         if (this.onAnalysisRefreshCallback) {
@@ -476,6 +496,8 @@ class CalendarRenderer {
                 dayElement.classList.contains('weekend') === false) {
                 dayElement.classList.add('eligible-working-day');
             }
+        } else if (this.isHolidayExcluded(dateString)) {
+            dayElement.classList.remove('excluded-day'); // A visit outranks a cached holiday
         }
 
         // Now toggle manual visited
@@ -534,7 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const placeId = placeIdInput.value.trim(); // Trim whitespace
         const startDate = datePicker.getStartDatetimeISO();
         const endDate = datePicker.getEndDatetimeISO();
-        const excludedDates = Array.from(calendar.excludedDates); // Get excluded dates from calendar
+        const excludedDates = calendar.getEffectiveExcludedDates(); // User exclusions plus holidays.json
         const manualVisitedDates = Array.from(calendar.manualVisitedDates); // Get manual visited dates
 
         // Basic validation for inputs.
@@ -654,8 +676,20 @@ Average: ${data.averageVisitsPerWorkingWeek}
         });
     }
 
+    // Load cached annual leave (holidays.json) before the first analysis; failures leave it empty.
+    const loadHolidays = async () => {
+        try {
+            const response = await fetch('/holidays');
+            const data: string[] & Partial<ErrorResponse> = await response.json();
+            if (response.ok) calendar.holidayDates = new Set(data);
+            else console.warn(data.error);
+        } catch (error) {
+            console.warn('Could not load holidays:', error);
+        }
+    };
+
     // Initial analysis run when the page loads
-    runAnalysis();
+    loadHolidays().then(runAnalysis);
 });
 
 // Export utilities for unit testing (index.html loads this file as an ES module, so this is harmless in the browser)
