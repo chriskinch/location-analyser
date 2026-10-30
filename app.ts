@@ -49,8 +49,9 @@ const STATE_KEYS = new Set(['startDate', 'startTime', 'endDate', 'endTime', 'pla
 const DATE_LIST_KEYS = new Set(['excludedDates', 'manualVisitedDates']);
 const MAX_STATE_BYTES = 64 * 1024;
 // Only answer /state for our own origin, so a DNS-rebinding page can't read or write it.
-// Browsers omit the port from Host when it is 80.
-const STATE_HOSTS = new Set(['127.0.0.1', 'localhost', hostname].map(h => port === 80 ? h : `${h}:${port}`));
+// Browsers omit the port from Host when it is 80, and bracket IPv6 addresses (HOST=::1 -> [::1]).
+const STATE_HOSTS = new Set(['127.0.0.1', 'localhost', hostname.includes(':') ? `[${hostname}]` : hostname]
+    .map(h => port === 80 ? h : `${h}:${port}`));
 
 function readState(): SavedState {
     try {
