@@ -563,6 +563,28 @@ describe('server-saved state on page load', () => {
         expect(localStorage.getItem('startTime')).toBe('09:00');
     });
 
+    it('holds edits made during load until the first-browser upload is done', async () => {
+        for (const [k, v] of Object.entries({
+            startDate: '2024-02-01', startTime: '08:00', endDate: '2024-02-28', endTime: '18:00', excludedDates: '["2024-02-05"]',
+        })) localStorage.setItem(k, v);
+        let release!: () => void;
+        server({});
+        const echo = fetchMock.getMockImplementation()!;
+        fetchMock.mockImplementationOnce(async (url: string) => {
+            await new Promise<void>(r => { release = r; });
+            return echo(url);
+        });
+        document.body.innerHTML = DOM;
+        document.dispatchEvent(new Event('DOMContentLoaded'));
+        await change(picker().startTimeInput, '09:00');
+        expect(patches()).toEqual([]);
+        release();
+        await tick();
+        expect(patches().map(p => p.url)).toEqual(['/state?ifEmpty=1', '/state']);
+        expect(patches()[0].body).toMatchObject({ startTime: '09:00', excludedDates: '["2024-02-05"]' });
+        expect(localStorage.getItem('excludedDates')).toBe('["2024-02-05"]');
+    });
+
     it('falls back to localStorage when the server is unreachable', async () => {
         localStorage.setItem('placeId', 'local-place');
         server(null);

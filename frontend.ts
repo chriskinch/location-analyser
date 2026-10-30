@@ -622,7 +622,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const calendarContainer = document.getElementById('calendarContainer')!;
 
     // Pull shared selections from the server first; the date picker already read localStorage, so re-apply.
-    await loadServerState();
+    // Edits made meanwhile queue their PATCH behind the load, so they can't beat the first-browser upload.
+    saving = loadServerState();
+    await saving;
     datePicker.loadSavedDates();
 
     // Function to run the analysis, now reusable
