@@ -7,6 +7,10 @@ import type { TimelineData } from './types';
 
 // Compiled to dist/; HTML pages and timeline.json live at the repo root.
 const ROOT = path.join(__dirname, '..');
+// TIMELINE_PATH points at an export elsewhere, e.g. a Google Drive synced folder.
+const TIMELINE_FILE = process.env.TIMELINE_PATH
+    ? path.resolve(process.env.TIMELINE_PATH)
+    : path.join(ROOT, 'timeline.json');
 
 const hostname = process.env.HOST || '127.0.0.1';
 const port = (() => {
@@ -68,7 +72,7 @@ const server = http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ error: 'File must contain a semanticSegments array' }));
                 return;
             }
-            await fs.promises.writeFile(path.join(ROOT, 'timeline.json'), raw);
+            await fs.promises.writeFile(TIMELINE_FILE, raw);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true, segments: data.semanticSegments.length }));
         } catch (err) {
@@ -97,7 +101,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         try {
-            const results = await analyzeTimelineData(placeId, startDate, endDate, excludedDates, manualVisitedDates); // Pass both
+            const results = await analyzeTimelineData(placeId, startDate, endDate, excludedDates, manualVisitedDates, TIMELINE_FILE); // Pass both
             res.statusCode = 200;
             res.end(JSON.stringify(results));
         } catch (error) {

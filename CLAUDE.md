@@ -23,6 +23,11 @@ npm test
 
 The application runs on `http://127.0.0.1:3000/` by default.
 
+Set `TIMELINE_PATH` to read (and upload to) a timeline file outside the repo, e.g. a Google Drive synced export:
+```bash
+TIMELINE_PATH="$HOME/Library/CloudStorage/GoogleDrive-<account>/My Drive/.../Timeline.json" npm start
+```
+
 ## Project Architecture
 
 This is a location visit analysis application that processes Google Timeline/Takeout data to calculate workplace visit statistics against UK working days.
