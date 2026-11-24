@@ -44,7 +44,7 @@ async function startServer({ timeline }: { timeline?: string } = {}) {
 
     const child = spawn(process.execPath, [path.join('dist', 'app.js')], {
         cwd: dir,
-        env: { ...process.env, HOST: '127.0.0.1', PORT: String(port) },
+        env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), TIMELINE_PATH: '' }, // never touch a real exported timeline
     });
     await new Promise<void>((resolve, reject) => {
         child.stdout.on('data', (d: Buffer) => { if (d.toString().includes('Server running')) resolve(); });
